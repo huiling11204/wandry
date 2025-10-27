@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "473132844745",
+    "project_id": "trip-planner-ec182",
+    "storage_bucket": "trip-planner-ec182.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:473132844745:android:6c2599c402f5c16d41ef18",
+        "android_client_info": {
+          "package_name": "com.example.wandry"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5bhIbpxQzUwVJmWO5ngFi-df5Db4NHxQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:473132844745:android:f3a59be7c82ef6f541ef18",
+        "android_client_info": {
+          "package_name": "tarumt.edu.my.personalized_trip_planner_system"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5bhIbpxQzUwVJmWO5ngFi-df5Db4NHxQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:473132844745:android:896b523927ff263041ef18",
+        "android_client_info": {
+          "package_name": "tarumt.edu.my.wandry"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5bhIbpxQzUwVJmWO5ngFi-df5Db4NHxQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
