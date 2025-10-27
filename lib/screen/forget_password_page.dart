@@ -374,7 +374,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       ),
                     ),
                   )
-                      : Text('Submit'),
+                      : Text('Reset Password'),
                 ),
 
                 SizedBox(height: 40),
