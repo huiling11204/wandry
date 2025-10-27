@@ -1,5 +1,5 @@
 // ============================================
-// VIEW PROFILE PAGE (Firebase Connected Properly)
+// VIEW PROFILE PAGE (FIXED - Properly reads from Firebase)
 // ============================================
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -27,7 +27,7 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
   }
 
   // ---------------------------------------------------
-  // LOAD PROFILE FROM "customer" COLLECTION (Fixed)
+  // LOAD PROFILE FROM FIREBASE (FIXED)
   // ---------------------------------------------------
   Future<void> _loadProfile() async {
     if (currentUser == null) return;
@@ -35,33 +35,87 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
     setState(() => isLoading = true);
 
     try {
-      final doc = await _firestore
-          .collection('customer') // ✅ corrected collection name
-          .doc(currentUser!.uid)
+      print('🔍 Loading profile for UID: ${currentUser!.uid}');
+
+      // Step 1: Get user document to find userID and email
+      QuerySnapshot userQuery = await _firestore
+          .collection('user')
+          .where('firebaseUid', isEqualTo: currentUser!.uid)
+          .limit(1)
           .get();
 
-      if (doc.exists) {
-        profileData = doc.data();
-      } else {
-        // fallback: if doc not found, use currentUser info
+      if (userQuery.docs.isEmpty) {
+        print('❌ No user document found');
+        throw 'User profile not found';
+      }
+
+      Map<String, dynamic> userData = userQuery.docs.first.data() as Map<String, dynamic>;
+      String email = userData['email'] ?? currentUser!.email ?? 'Not set';
+      String role = userData['role'] ?? 'Customer';
+
+      print('✅ User found - Role: $role, Email: $email');
+
+      // Step 2: Get customer profile using firebaseUid
+      QuerySnapshot profileQuery = await _firestore
+          .collection('customerProfile')
+          .where('firebaseUid', isEqualTo: currentUser!.uid)
+          .limit(1)
+          .get();
+
+      if (profileQuery.docs.isEmpty) {
+        print('❌ No customer profile found');
+        // Use fallback data
         profileData = {
-          'custName': currentUser!.displayName ?? 'Traveler',
-          'custEmail': currentUser!.email ?? 'Not set',
-          'custContact': 'Not set',
+          'firstName': currentUser!.displayName ?? 'User',
+          'lastName': '',
+          'email': email,
+          'phoneNumber': 'Not set',
         };
+      } else {
+        Map<String, dynamic> customerData = profileQuery.docs.first.data() as Map<String, dynamic>;
+
+        print('✅ Customer profile found');
+        print('📋 Data: $customerData');
+
+        // Combine firstName and lastName for display
+        String firstName = customerData['firstName'] ?? '';
+        String lastName = customerData['lastName'] ?? '';
+        String fullName = '$firstName $lastName'.trim();
+        if (fullName.isEmpty) fullName = 'User';
+
+        profileData = {
+          'fullName': fullName,
+          'firstName': firstName,
+          'lastName': lastName,
+          'email': email,
+          'phoneNumber': customerData['phoneNumber'] ?? 'Not set',
+          'custProfileID': customerData['custProfileID'],
+          'userID': customerData['userID'],
+        };
+
+        print('✅ Profile data loaded: $profileData');
       }
     } catch (e) {
-      print('Error loading profile: $e');
+      print('❌ Error loading profile: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading profile data.')),
+        SnackBar(content: Text('Error loading profile: $e')),
       );
+
+      // Set fallback data
+      profileData = {
+        'fullName': currentUser?.displayName ?? 'User',
+        'firstName': currentUser?.displayName ?? 'User',
+        'lastName': '',
+        'email': currentUser?.email ?? 'Not set',
+        'phoneNumber': 'Not set',
+      };
     }
 
     if (mounted) setState(() => isLoading = false);
   }
 
   // ---------------------------------------------------
-  // DELETE ACCOUNT (with trips + Auth + Firestore)
+  // DELETE ACCOUNT (Fixed to use correct collections)
   // ---------------------------------------------------
   Future<void> _deleteAccount() async {
     final confirm = await showDialog<bool>(
@@ -88,21 +142,46 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
     if (confirm != true) return;
 
     try {
+      print('🗑️ Starting account deletion...');
+
       // Delete all trips belonging to user
       final trips = await _firestore
           .collection('trips')
-          .where('custProfileID', isEqualTo: currentUser?.uid)
+          .where('firebaseUid', isEqualTo: currentUser?.uid)
           .get();
 
       for (var doc in trips.docs) {
         await doc.reference.delete();
       }
+      print('✅ Deleted ${trips.docs.length} trips');
 
-      // Delete profile document
-      await _firestore.collection('customer').doc(currentUser!.uid).delete();
+      // Delete customer profile
+      final profileQuery = await _firestore
+          .collection('customerProfile')
+          .where('firebaseUid', isEqualTo: currentUser?.uid)
+          .limit(1)
+          .get();
+
+      if (profileQuery.docs.isNotEmpty) {
+        await profileQuery.docs.first.reference.delete();
+        print('✅ Deleted customer profile');
+      }
+
+      // Delete user document
+      final userQuery = await _firestore
+          .collection('user')
+          .where('firebaseUid', isEqualTo: currentUser?.uid)
+          .limit(1)
+          .get();
+
+      if (userQuery.docs.isNotEmpty) {
+        await userQuery.docs.first.reference.delete();
+        print('✅ Deleted user document');
+      }
 
       // Delete Firebase Auth user
       await currentUser!.delete();
+      print('✅ Deleted Firebase Auth user');
 
       // Navigate to login
       if (mounted) {
@@ -112,7 +191,7 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
         );
       }
     } catch (e) {
-      print('Error deleting account: $e');
+      print('❌ Error deleting account: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error deleting account: $e')),
       );
@@ -143,19 +222,17 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
             children: [
               ProfileField(
                 label: 'Name',
-                value: profileData?['custName'] ?? 'Not set',
+                value: profileData?['fullName'] ?? 'Not set',
               ),
               SizedBox(height: 16),
               ProfileField(
                 label: 'Email Address',
-                value: profileData?['custEmail'] ??
-                    currentUser?.email ??
-                    'Not set',
+                value: profileData?['email'] ?? 'Not set',
               ),
               SizedBox(height: 16),
               ProfileField(
                 label: 'Contact Number',
-                value: profileData?['custContact'] ?? 'Not set',
+                value: profileData?['phoneNumber'] ?? 'Not set',
               ),
               SizedBox(height: 40),
               Row(

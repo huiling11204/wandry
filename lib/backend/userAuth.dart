@@ -6,26 +6,22 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Get current user
   User? get currentUser => _auth.currentUser;
-
-  // Stream to listen to auth changes
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   // ==========================================
-  // FIXED: Generate User ID with Counter (More Reliable)
+  // Generate User ID with Counter (C20251027XXXX)
   // ==========================================
   Future<String> _getNextUserId(String role) async {
     try {
       String prefix = role == 'Customer' ? 'C' : 'A';
       String dateStr = DateFormat('yyyyMMdd').format(DateTime.now());
 
-      print('🔧 Generating UserID with prefix: $prefix, date: $dateStr');
+      print('🔧 Generating UserID: $prefix$dateStr');
 
-      // Use Firestore transaction for atomic counter increment
       DocumentReference counterRef = _firestore
           .collection('counters')
-          .doc('${prefix.toLowerCase()}UserCounter');
+          .doc('userCounter_$dateStr'); // One counter per day
 
       return await _firestore.runTransaction<String>((transaction) async {
         DocumentSnapshot counterSnapshot = await transaction.get(counterRef);
@@ -33,57 +29,47 @@ class AuthService {
         int currentCount = 0;
         if (counterSnapshot.exists) {
           Map<String, dynamic>? data = counterSnapshot.data() as Map<String, dynamic>?;
-          if (data != null && data.containsKey(dateStr)) {
-            currentCount = data[dateStr] as int;
+          if (data != null && data.containsKey(prefix)) {
+            currentCount = data[prefix] as int;
           }
         }
 
         int newCount = currentCount + 1;
-        print('📊 Counter: $currentCount → $newCount');
-
-        // Update counter
-        transaction.set(counterRef, {
-          dateStr: newCount,
-          'lastUpdated': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        // Generate ID: PREFIX + YYYYMMDD + 0001
         String sequenceStr = newCount.toString().padLeft(4, '0');
         String newID = '$prefix$dateStr$sequenceStr';
 
+        print('📊 Counter: $prefix $currentCount → $newCount');
         print('✅ Generated UserID: $newID');
+
+        // Update counter for this prefix
+        transaction.set(counterRef, {
+          prefix: newCount,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
         return newID;
       });
 
     } catch (e) {
-      print('❌ Error generating UserID: $e');
-      print('❌ Error type: ${e.runtimeType}');
-
-      // Better fallback - still uses date format
-      String prefix = role == 'Customer' ? 'C' : 'A';
-      String dateStr = DateFormat('yyyyMMdd').format(DateTime.now());
-      String randomNum = (1000 + (DateTime.now().millisecondsSinceEpoch % 9000)).toString();
-      String fallbackId = '$prefix$dateStr$randomNum';
-
-      print('⚠️ Using fallback UserID: $fallbackId');
-      return fallbackId;
+      print('❌ CRITICAL ERROR generating UserID: $e');
+      print('❌ Error details: ${e.toString()}');
+      rethrow; // Don't use fallback - let registration fail properly
     }
   }
 
   // ==========================================
-  // FIXED: Generate Profile ID with Counter (More Reliable)
+  // Generate Profile ID with Counter (CP20251027XXXX)
   // ==========================================
   Future<String> _getNextProfileId(String role) async {
     try {
       String prefix = role == 'Customer' ? 'CP' : 'AP';
       String dateStr = DateFormat('yyyyMMdd').format(DateTime.now());
 
-      print('🔧 Generating ProfileID with prefix: $prefix, date: $dateStr');
+      print('🔧 Generating ProfileID: $prefix$dateStr');
 
-      // Use Firestore transaction for atomic counter increment
       DocumentReference counterRef = _firestore
           .collection('counters')
-          .doc('${prefix.toLowerCase()}Counter');
+          .doc('profileCounter_$dateStr'); // One counter per day
 
       return await _firestore.runTransaction<String>((transaction) async {
         DocumentSnapshot counterSnapshot = await transaction.get(counterRef);
@@ -91,44 +77,37 @@ class AuthService {
         int currentCount = 0;
         if (counterSnapshot.exists) {
           Map<String, dynamic>? data = counterSnapshot.data() as Map<String, dynamic>?;
-          if (data != null && data.containsKey(dateStr)) {
-            currentCount = data[dateStr] as int;
+          if (data != null && data.containsKey(prefix)) {
+            currentCount = data[prefix] as int;
           }
         }
 
         int newCount = currentCount + 1;
-        print('📊 Profile Counter: $currentCount → $newCount');
-
-        // Update counter
-        transaction.set(counterRef, {
-          dateStr: newCount,
-          'lastUpdated': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        // Generate ID: PREFIX + YYYYMMDD + 0001
         String sequenceStr = newCount.toString().padLeft(4, '0');
         String newID = '$prefix$dateStr$sequenceStr';
 
+        print('📊 Profile Counter: $prefix $currentCount → $newCount');
         print('✅ Generated ProfileID: $newID');
+
+        // Update counter for this prefix
+        transaction.set(counterRef, {
+          prefix: newCount,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
         return newID;
       });
 
     } catch (e) {
-      print('❌ Error generating ProfileID: $e');
-      print('❌ Error type: ${e.runtimeType}');
-
-      // Better fallback - still uses date format
-      String prefix = role == 'Customer' ? 'CP' : 'AP';
-      String dateStr = DateFormat('yyyyMMdd').format(DateTime.now());
-      String randomNum = (1000 + (DateTime.now().millisecondsSinceEpoch % 9000)).toString();
-      String fallbackId = '$prefix$dateStr$randomNum';
-
-      print('⚠️ Using fallback ProfileID: $fallbackId');
-      return fallbackId;
+      print('❌ CRITICAL ERROR generating ProfileID: $e');
+      print('❌ Error details: ${e.toString()}');
+      rethrow; // Don't use fallback - let registration fail properly
     }
   }
 
-  // Sign in with email and password
+  // ==========================================
+  // Sign In
+  // ==========================================
   Future<UserCredential?> signInWithEmailAndPassword(String email, String password) async {
     try {
       print('🔐 Attempting sign in for: $email');
@@ -140,7 +119,6 @@ class AuthService {
 
       print('✅ Firebase Auth successful for UID: ${result.user?.uid}');
 
-      // Check if user profile exists in new structure
       if (result.user != null) {
         print('🔍 Looking for user profile with firebaseUid: ${result.user!.uid}');
 
@@ -160,7 +138,6 @@ class AuthService {
 
         print('✅ User profile found: ${userQuery.docs.first.id}');
 
-        // Update last login date
         await _firestore
             .collection('user')
             .doc(userQuery.docs.first.id)
@@ -178,20 +155,21 @@ class AuthService {
       throw _handleAuthException(e);
     } catch (e) {
       print('❌ Unexpected error during sign in: $e');
-      print('❌ Error type: ${e.runtimeType}');
 
       if (e is String) rethrow;
-      throw 'An unexpected error occurred. Please try again. Error: ${e.toString()}';
+      throw 'An unexpected error occurred. Please try again.';
     }
   }
 
-  // Register with email and password - creates user and profile based on role
+  // ==========================================
+  // Register User
+  // ==========================================
   Future<UserCredential?> createUserWithEmailAndPassword({
     required String email,
     required String password,
     required String name,
     required String contact,
-    String role = 'Customer', // Default role is Customer
+    String role = 'Customer',
   }) async {
     UserCredential? result;
     String? userID;
@@ -203,7 +181,7 @@ class AuthService {
       print('📱 Contact: $contact');
       print('🎭 Role: $role');
 
-      // Step 1: Create user in Firebase Auth
+      // Step 1: Create Firebase Auth user
       print('🔐 Creating Firebase Auth user...');
       result = await _auth.createUserWithEmailAndPassword(
         email: email.trim(),
@@ -213,12 +191,12 @@ class AuthService {
 
       if (result.user != null) {
         try {
-          // Step 2: Generate custom userID with role prefix and date
+          // Step 2: Generate custom userID
           print('🔢 Generating custom UserID...');
           userID = await _getNextUserId(role);
           print('✅ Generated custom UserID: $userID');
 
-          // Step 3: Create user document in 'user' collection
+          // Step 3: Create user document
           print('📝 Creating user document...');
           Map<String, dynamic> userData = {
             'userID': userID,
@@ -230,7 +208,7 @@ class AuthService {
           };
 
           await _firestore.collection('user').doc(userID).set(userData);
-          print('✅ User document created successfully at: user/$userID');
+          print('✅ User document created at: user/$userID');
 
           // Step 4: Create role-specific profile
           if (role == 'Customer') {
@@ -264,14 +242,13 @@ class AuthService {
 
         } catch (firestoreError) {
           print('❌ Firestore error: $firestoreError');
-          print('❌ Error type: ${firestoreError.runtimeType}');
           print('🧹 Cleaning up Firebase Auth user...');
 
           try {
             await result.user!.delete();
             print('✅ Firebase Auth user cleaned up');
           } catch (deleteError) {
-            print('❌ Failed to clean up Firebase Auth user: $deleteError');
+            print('❌ Failed to clean up: $deleteError');
           }
 
           throw 'Failed to create user profile: $firestoreError';
@@ -285,7 +262,6 @@ class AuthService {
       throw _handleAuthException(e);
     } catch (e) {
       print('❌ Unexpected error during registration: $e');
-      print('❌ Error type: ${e.runtimeType}');
 
       if (e is String) {
         throw e;
@@ -295,7 +271,9 @@ class AuthService {
     }
   }
 
-  // Create customer profile
+  // ==========================================
+  // Create Customer Profile
+  // ==========================================
   Future<void> _createCustomerProfile({
     required String userID,
     required String firebaseUid,
@@ -304,7 +282,6 @@ class AuthService {
   }) async {
     print('👤 Creating customer profile...');
 
-    // Split name into first and last name
     List<String> nameParts = name.trim().split(' ');
     String firstName = nameParts.first;
     String lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
@@ -312,7 +289,6 @@ class AuthService {
     print('📝 First name: $firstName');
     print('📝 Last name: $lastName');
 
-    // Generate profile ID with CP prefix and date
     String custProfileID = await _getNextProfileId('Customer');
 
     Map<String, dynamic> customerData = {
@@ -329,7 +305,9 @@ class AuthService {
     print('✅ Customer profile created with ID: $custProfileID');
   }
 
-  // Create admin profile
+  // ==========================================
+  // Create Admin Profile
+  // ==========================================
   Future<void> _createAdminProfile({
     required String userID,
     required String firebaseUid,
@@ -337,7 +315,6 @@ class AuthService {
   }) async {
     print('👨‍💼 Creating admin profile...');
 
-    // Generate profile ID with AP prefix and date
     String adminProfileID = await _getNextProfileId('Admin');
 
     Map<String, dynamic> adminData = {
@@ -352,12 +329,13 @@ class AuthService {
     print('✅ Admin profile created with ID: $adminProfileID');
   }
 
-  // Get user profile from Firestore by Firebase UID
+  // ==========================================
+  // Get User Profile
+  // ==========================================
   Future<Map<String, dynamic>?> getUserProfile(String firebaseUid) async {
     try {
       print('🔍 Getting user profile for firebaseUid: $firebaseUid');
 
-      // Get user document
       QuerySnapshot userQuery = await _firestore
           .collection('user')
           .where('firebaseUid', isEqualTo: firebaseUid)
@@ -375,7 +353,6 @@ class AuthService {
 
       print('✅ User document found. Role: $role');
 
-      // Get role-specific profile
       if (role == 'Customer') {
         QuerySnapshot profileQuery = await _firestore
             .collection('customerProfile')
@@ -411,12 +388,13 @@ class AuthService {
       return userData;
     } catch (e) {
       print('❌ Error loading user profile: $e');
-      print('❌ Error type: ${e.runtimeType}');
       throw 'Failed to load user profile: ${e.toString()}';
     }
   }
 
-  // Get user profile by userID
+  // ==========================================
+  // Get User Profile by UserID
+  // ==========================================
   Future<Map<String, dynamic>?> getUserProfileByUserId(String userID) async {
     try {
       DocumentSnapshot userDoc = await _firestore.collection('user').doc(userID).get();
@@ -426,7 +404,6 @@ class AuthService {
       Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
       String role = userData['role'];
 
-      // Get role-specific profile
       if (role == 'Customer') {
         QuerySnapshot profileQuery = await _firestore
             .collection('customerProfile')
@@ -461,7 +438,9 @@ class AuthService {
     }
   }
 
-  // Update customer profile
+  // ==========================================
+  // Update Customer Profile
+  // ==========================================
   Future<void> updateCustomerProfile({
     required String firebaseUid,
     String? firstName,
@@ -486,7 +465,6 @@ class AuthService {
 
       await profileQuery.docs.first.reference.update(updateData);
 
-      // Update display name if name changed
       if (firstName != null && currentUser != null) {
         String fullName = lastName != null ? '$firstName $lastName' : firstName;
         await currentUser!.updateDisplayName(fullName);
@@ -496,7 +474,9 @@ class AuthService {
     }
   }
 
-  // Update admin profile
+  // ==========================================
+  // Update Admin Profile
+  // ==========================================
   Future<void> updateAdminProfile({
     required String firebaseUid,
     String? adminName,
@@ -517,7 +497,6 @@ class AuthService {
 
       await profileQuery.docs.first.reference.update(updateData);
 
-      // Update display name
       if (adminName != null && currentUser != null) {
         await currentUser!.updateDisplayName(adminName);
       }
@@ -526,7 +505,9 @@ class AuthService {
     }
   }
 
-  // Sign out
+  // ==========================================
+  // Sign Out
+  // ==========================================
   Future<void> signOut() async {
     try {
       await _auth.signOut();
@@ -535,7 +516,9 @@ class AuthService {
     }
   }
 
-  // Reset password
+  // ==========================================
+  // Reset Password
+  // ==========================================
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email.trim());
@@ -546,13 +529,14 @@ class AuthService {
     }
   }
 
-  // Delete user account and all associated profiles
+  // ==========================================
+  // Delete Account
+  // ==========================================
   Future<void> deleteAccount() async {
     try {
       if (currentUser != null) {
         String firebaseUid = currentUser!.uid;
 
-        // Find user document
         QuerySnapshot userQuery = await _firestore
             .collection('user')
             .where('firebaseUid', isEqualTo: firebaseUid)
@@ -564,7 +548,6 @@ class AuthService {
           Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
           String role = userData['role'];
 
-          // Delete role-specific profile
           if (role == 'Customer') {
             QuerySnapshot profileQuery = await _firestore
                 .collection('customerProfile')
@@ -587,11 +570,9 @@ class AuthService {
             }
           }
 
-          // Delete user document
           await userDoc.reference.delete();
         }
 
-        // Delete Firebase Auth user
         await currentUser!.delete();
       }
     } catch (e) {
@@ -599,7 +580,9 @@ class AuthService {
     }
   }
 
-  // Handle Firebase Auth exceptions
+  // ==========================================
+  // Handle Auth Exceptions
+  // ==========================================
   String _handleAuthException(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':

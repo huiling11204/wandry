@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wandry/backend/userAuth.dart'; // Import your auth service
+import 'package:wandry/backend/userAuth.dart';
 
 class RegisterPage extends StatefulWidget {
   @override
@@ -8,14 +8,16 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _contactController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final AuthService _authService = AuthService(); // Initialize auth service
+  final AuthService _authService = AuthService();
 
-  String _name = '';
+  String _firstName = '';
+  String _lastName = '';
   String _email = '';
   String _contact = '';
   String _password = '';
@@ -23,14 +25,17 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
+  bool _agreedToTerms = false;
 
   // Validation states
-  bool _isNameValid = false;
+  bool _isFirstNameValid = false;
+  bool _isLastNameValid = false;
   bool _isEmailValid = false;
   bool _isContactValid = false;
   bool _isPasswordValid = false;
   bool _isConfirmPasswordValid = false;
-  String _nameError = '';
+  String _firstNameError = '';
+  String _lastNameError = '';
   String _emailError = '';
   String _contactError = '';
   String _passwordError = '';
@@ -39,7 +44,8 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   void initState() {
     super.initState();
-    _nameController.addListener(_validateName);
+    _firstNameController.addListener(_validateFirstName);
+    _lastNameController.addListener(_validateLastName);
     _emailController.addListener(_validateEmail);
     _contactController.addListener(_validateContact);
     _passwordController.addListener(_validatePassword);
@@ -48,7 +54,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _emailController.dispose();
     _contactController.dispose();
     _passwordController.dispose();
@@ -56,21 +63,40 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  void _validateName() {
+  void _validateFirstName() {
     setState(() {
-      _name = _nameController.text.trim();
-      if (_name.isEmpty) {
-        _nameError = '';
-        _isNameValid = false;
-      } else if (_name.length < 2) {
-        _nameError = 'Name must be at least 2 characters';
-        _isNameValid = false;
-      } else if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(_name)) {
-        _nameError = 'Name can only contain letters and spaces';
-        _isNameValid = false;
+      _firstName = _firstNameController.text.trim();
+      if (_firstName.isEmpty) {
+        _firstNameError = '';
+        _isFirstNameValid = false;
+      } else if (_firstName.length < 2) {
+        _firstNameError = 'First name must be at least 2 characters';
+        _isFirstNameValid = false;
+      } else if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(_firstName)) {
+        _firstNameError = 'First name can only contain letters';
+        _isFirstNameValid = false;
       } else {
-        _nameError = '';
-        _isNameValid = true;
+        _firstNameError = '';
+        _isFirstNameValid = true;
+      }
+    });
+  }
+
+  void _validateLastName() {
+    setState(() {
+      _lastName = _lastNameController.text.trim();
+      if (_lastName.isEmpty) {
+        _lastNameError = '';
+        _isLastNameValid = false;
+      } else if (_lastName.length < 2) {
+        _lastNameError = 'Last name must be at least 2 characters';
+        _isLastNameValid = false;
+      } else if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(_lastName)) {
+        _lastNameError = 'Last name can only contain letters';
+        _isLastNameValid = false;
+      } else {
+        _lastNameError = '';
+        _isLastNameValid = true;
       }
     });
   }
@@ -135,7 +161,6 @@ class _RegisterPageState extends State<RegisterPage> {
         _isPasswordValid = false;
       }
 
-      // Re-validate confirm password when password changes
       _validateConfirmPassword();
     });
   }
@@ -171,7 +196,6 @@ class _RegisterPageState extends State<RegisterPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Icon
                 Container(
                   width: 80,
                   height: 80,
@@ -186,14 +210,11 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                 ),
                 SizedBox(height: 20),
-
-                // Title
                 Text(
                   'Error',
                   style: Theme.of(context).textTheme.titleLarge,
                   textAlign: TextAlign.center,
                 ),
-
                 Padding(
                   padding: const EdgeInsets.only(top: 12.0),
                   child: Text(
@@ -202,15 +223,12 @@ class _RegisterPageState extends State<RegisterPage> {
                     textAlign: TextAlign.center,
                   ),
                 ),
-
                 SizedBox(height: 20),
-
-                // Button
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
                     onPressed: () {
-                      Navigator.of(context).pop(); // Close dialog
+                      Navigator.of(context).pop();
                     },
                     style: Theme.of(context).outlinedButtonTheme.style,
                     child: Text('Try Again'),
@@ -238,7 +256,6 @@ class _RegisterPageState extends State<RegisterPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Icon
                 Container(
                   width: 80,
                   height: 80,
@@ -253,14 +270,11 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                 ),
                 SizedBox(height: 20),
-
-                // Title
                 Text(
                   isSuccess ? 'Registration Successful' : 'Registration Failed',
                   style: Theme.of(context).textTheme.titleLarge,
                   textAlign: TextAlign.center,
                 ),
-
                 if (!isSuccess && errorMessage != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 12.0),
@@ -270,17 +284,13 @@ class _RegisterPageState extends State<RegisterPage> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-
                 SizedBox(height: 20),
-
-                // Button
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
                     onPressed: () {
-                      Navigator.of(context).pop(); // Close dialog
+                      Navigator.of(context).pop();
                       if (isSuccess) {
-                        // Navigate back to login
                         Navigator.pushNamedAndRemoveUntil(
                           context,
                           '/login',
@@ -301,23 +311,28 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   void _clearForm() {
-    _nameController.clear();
+    _firstNameController.clear();
+    _lastNameController.clear();
     _emailController.clear();
     _contactController.clear();
     _passwordController.clear();
     _confirmPasswordController.clear();
     setState(() {
-      _name = '';
+      _firstName = '';
+      _lastName = '';
       _email = '';
       _contact = '';
       _password = '';
       _confirmPassword = '';
-      _isNameValid = false;
+      _agreedToTerms = false;
+      _isFirstNameValid = false;
+      _isLastNameValid = false;
       _isEmailValid = false;
       _isContactValid = false;
       _isPasswordValid = false;
       _isConfirmPasswordValid = false;
-      _nameError = '';
+      _firstNameError = '';
+      _lastNameError = '';
       _emailError = '';
       _contactError = '';
       _passwordError = '';
@@ -326,12 +341,13 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _handleRegister() async {
-    // Validate all fields
-    bool allValid = _isNameValid &&
+    bool allValid = _isFirstNameValid &&
+        _isLastNameValid &&
         _isEmailValid &&
         _isContactValid &&
         _isPasswordValid &&
-        _isConfirmPasswordValid;
+        _isConfirmPasswordValid &&
+        _agreedToTerms;
 
     if (!allValid) {
       _showErrorDialog('Please fill all fields correctly and agree to terms');
@@ -343,18 +359,19 @@ class _RegisterPageState extends State<RegisterPage> {
     });
 
     try {
-      // Use AuthService to create user account
+      // Combine first name and last name for registration
+      String fullName = '$_firstName $_lastName'.trim();
+
       await _authService.createUserWithEmailAndPassword(
         email: _email,
         password: _password,
-        name: _name,
+        name: fullName,
         contact: _contact,
       );
 
       _showRegistrationDialog(true);
 
     } catch (e) {
-      // Clear form and show error dialog
       _clearForm();
       _showRegistrationDialog(false, e.toString());
     } finally {
@@ -396,7 +413,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   ? theme.colorScheme.error
                   : isValid && value != null && value.isNotEmpty
                   ? Colors.green.shade400
-                  : theme.colorScheme.primary, // Blue outline
+                  : theme.colorScheme.primary,
               width: 1.5,
             ),
           ),
@@ -448,7 +465,7 @@ class _RegisterPageState extends State<RegisterPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.white, // White background to match design
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -460,31 +477,55 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 // Title
                 Center(
-                  child: Text(
-                    'Register Account',
-                    style: theme.textTheme.headlineMedium,
+                  child: Column(
+                    children: [
+                      Text(
+                        'Sign up now',
+                        style: theme.textTheme.headlineMedium,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Please fill the details and create account',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
                 SizedBox(height: 40),
 
-                // Name Field
+                // First Name Field
                 _buildInputField(
-                  label: 'Enter your name',
-                  hint: 'Your Name',
-                  controller: _nameController,
+                  label: 'First name',
+                  hint: 'Enter your first name',
+                  controller: _firstNameController,
                   prefixIcon: Icons.person_outline,
-                  isValid: _isNameValid,
-                  errorText: _nameError,
-                  value: _name,
+                  isValid: _isFirstNameValid,
+                  errorText: _firstNameError,
+                  value: _firstName,
+                ),
+
+                SizedBox(height: 20),
+
+                // Last Name Field
+                _buildInputField(
+                  label: 'Last name',
+                  hint: 'Enter your last name',
+                  controller: _lastNameController,
+                  prefixIcon: Icons.person_outline,
+                  isValid: _isLastNameValid,
+                  errorText: _lastNameError,
+                  value: _lastName,
                 ),
 
                 SizedBox(height: 20),
 
                 // Email Field
                 _buildInputField(
-                  label: 'Enter your email',
-                  hint: 'Email',
+                  label: 'Email',
+                  hint: 'Enter your email',
                   controller: _emailController,
                   prefixIcon: Icons.email_outlined,
                   isValid: _isEmailValid,
@@ -497,8 +538,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 // Contact Number Field
                 _buildInputField(
-                  label: 'Enter your contact number',
-                  hint: 'Your Contact Number',
+                  label: 'Contact number',
+                  hint: 'Enter your contact number',
                   controller: _contactController,
                   prefixIcon: Icons.phone_outlined,
                   isValid: _isContactValid,
@@ -511,8 +552,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 // Password Field
                 _buildInputField(
-                  label: 'Enter your password',
-                  hint: 'Password',
+                  label: 'Password',
+                  hint: 'Enter your password',
                   controller: _passwordController,
                   prefixIcon: Icons.lock_outline,
                   isValid: _isPasswordValid,
@@ -531,8 +572,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 // Confirm Password Field
                 _buildInputField(
-                  label: 'Enter confirm password',
-                  hint: 'Confirm Password',
+                  label: 'Confirm password',
+                  hint: 'Enter confirm password',
                   controller: _confirmPasswordController,
                   prefixIcon: Icons.lock_outline,
                   isValid: _isConfirmPasswordValid,
@@ -549,11 +590,83 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 SizedBox(height: 20),
 
+                // Terms and Conditions Checkbox
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        value: _agreedToTerms,
+                        onChanged: _isLoading ? null : (bool? value) {
+                          setState(() {
+                            _agreedToTerms = value ?? false;
+                          });
+                        },
+                        activeColor: theme.colorScheme.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.black,
+                          ),
+                          children: [
+                            TextSpan(text: 'I agree to the '),
+                            WidgetSpan(
+                              child: GestureDetector(
+                                onTap: _isLoading ? null : () {
+                                  // TODO: Navigate to Terms & Conditions page
+                                  print('Terms & Conditions clicked');
+                                },
+                                child: Text(
+                                  'Terms & Conditions',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: theme.colorScheme.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            TextSpan(text: ' & '),
+                            WidgetSpan(
+                              child: GestureDetector(
+                                onTap: _isLoading ? null : () {
+                                  // TODO: Navigate to Privacy Policy page
+                                  print('Privacy Policy clicked');
+                                },
+                                child: Text(
+                                  'Privacy Policy',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: theme.colorScheme.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            TextSpan(text: ' set out by this site'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                SizedBox(height: 30),
+
                 // Sign Up Button
                 OutlinedButton(
-                  onPressed: (_isLoading || !_isNameValid || !_isEmailValid ||
-                      !_isContactValid || !_isPasswordValid ||
-                      !_isConfirmPasswordValid)
+                  onPressed: (_isLoading || !_isFirstNameValid || !_isLastNameValid ||
+                      !_isEmailValid || !_isContactValid || !_isPasswordValid ||
+                      !_isConfirmPasswordValid || !_agreedToTerms)
                       ? null
                       : _handleRegister,
                   style: theme.outlinedButtonTheme.style,
@@ -586,16 +699,14 @@ class _RegisterPageState extends State<RegisterPage> {
                         Navigator.pop(context);
                       },
                       child: Text(
-                        'Login',
+                        'Sign in',
                         style: TextStyle(
-                          color: _isLoading ? theme.colorScheme.outline : theme
-                              .colorScheme.primary,
+                          color: _isLoading ? theme.colorScheme.outline : theme.colorScheme.primary,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           fontFamily: theme.textTheme.bodyMedium?.fontFamily,
                           decoration: TextDecoration.underline,
-                          decorationColor: _isLoading ? theme.colorScheme
-                              .outline : theme.colorScheme.primary,
+                          decorationColor: _isLoading ? theme.colorScheme.outline : theme.colorScheme.primary,
                         ),
                       ),
                     ),
