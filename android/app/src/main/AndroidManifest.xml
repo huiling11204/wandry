@@ -1,4 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- LOCATION PERMISSIONS FOR EXPLORE PAGE -->
+    <!-- Required for location detection -->
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" /> <!-- for precise GPS location -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" /> <!-- for network-based location -->
+    <!-- Required for API calls -->
+    <uses-permission android:name="android.permission.INTERNET" /> <!-- Required for OpenStreetMap API calls -->
+    <!-- For better location accuracy -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <application
         android:label="wandry"
         android:name="${applicationName}"

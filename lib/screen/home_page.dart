@@ -10,6 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:wandry/screen/setting_page.dart';
 import 'package:wandry/screen/search_page.dart';
+import 'package:wandry/screen/explore_page.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -33,7 +34,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _pages = [
       HomeContentPage(onNavigate: _navigateToTab),
-      ExplorePage(), // Nearby places with location
+      ExplorePage(), // UPDATED: Now uses the full-featured explore page
       SearchPage(), // OpenStreetMap search
       MyTripsPage(), // Journey
       SettingsPage(), // Setting
@@ -955,44 +956,8 @@ extension SizedBoxSliver on SizedBox {
 }
 
 // ============================================
-// PLACEHOLDER PAGES
+// PLACEHOLDER PAGES (keep existing ones)
 // ============================================
-
-class ExplorePage extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Explore Nearby'),
-        automaticallyImplyLeading: false,
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.explore, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'Nearby Places',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                'This page will show food, accommodation, and places to visit near your current location using OpenStreetMap',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
 
 class MyTripsPage extends StatelessWidget {
   @override
