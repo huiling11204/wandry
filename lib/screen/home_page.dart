@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:wandry/screen/setting_page.dart';
+import 'package:wandry/screen/search_page.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -991,39 +992,7 @@ class ExplorePage extends StatelessWidget {
   }
 }
 
-class SearchPage extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Search Places'),
-        automaticallyImplyLeading: false,
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'Search Destinations',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                'Search any place in the world using OpenStreetMap',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+
 
 class MyTripsPage extends StatelessWidget {
   @override
