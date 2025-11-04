@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:wandry/screen/setting_page.dart';
 import 'package:wandry/screen/search_page.dart';
 import 'package:wandry/screen/explore_page.dart';
+import 'package:wandry/screen/journey/my_trips_page.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -959,50 +960,50 @@ extension SizedBoxSliver on SizedBox {
 // PLACEHOLDER PAGES (keep existing ones)
 // ============================================
 
-class MyTripsPage extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('My Trips'),
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.add),
-            onPressed: () {
-              // Navigate to create trip page
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Create new trip')),
-              );
-            },
-          ),
-        ],
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.map, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'Your Trip Itineraries',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                'Create trips by setting your preferences, view generated itineraries, and modify them as needed',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// class MyTripsPage extends StatelessWidget {
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(
+//         title: Text('My Trips'),
+//         automaticallyImplyLeading: false,
+//         actions: [
+//           IconButton(
+//             icon: Icon(Icons.add),
+//             onPressed: () {
+//               // Navigate to create trip page
+//               ScaffoldMessenger.of(context).showSnackBar(
+//                 SnackBar(content: Text('Create new trip')),
+//               );
+//             },
+//           ),
+//         ],
+//       ),
+//       body: Center(
+//         child: Column(
+//           mainAxisAlignment: MainAxisAlignment.center,
+//           children: [
+//             Icon(Icons.map, size: 64, color: Colors.grey),
+//             SizedBox(height: 16),
+//             Text(
+//               'Your Trip Itineraries',
+//               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+//             ),
+//             SizedBox(height: 8),
+//             Padding(
+//               padding: EdgeInsets.symmetric(horizontal: 40),
+//               child: Text(
+//                 'Create trips by setting your preferences, view generated itineraries, and modify them as needed',
+//                 textAlign: TextAlign.center,
+//                 style: TextStyle(color: Colors.grey[600]),
+//               ),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }
 
 class ProfilePage extends StatelessWidget {
   @override
