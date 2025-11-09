@@ -264,7 +264,7 @@ class AuthService {
       print('❌ Unexpected error during registration: $e');
 
       if (e is String) {
-        throw e;
+        rethrow;
       }
 
       throw 'Registration failed: ${e.toString()}';

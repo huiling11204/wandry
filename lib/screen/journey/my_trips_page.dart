@@ -5,7 +5,7 @@ import 'trip_basic_info_page.dart';
 import 'trip_detail_page.dart';
 
 class MyTripsPage extends StatefulWidget {
-  const MyTripsPage({Key? key}) : super(key: key);
+  const MyTripsPage({super.key});
 
   @override
   State<MyTripsPage> createState() => _MyTripsPageState();

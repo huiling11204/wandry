@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'place_detail_page.dart';
+import '../backend/interaction_tracker.dart';
 
 class SearchPage extends StatefulWidget {
-  const SearchPage({Key? key}) : super(key: key);
+  const SearchPage({super.key});
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -84,8 +85,14 @@ class _SearchPageState extends State<SearchPage> {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           setState(() {
-            _results = data['results'] ?? [];
+            _results = List<Map<String, dynamic>>.from(data['results'] ?? []);
           });
+
+          // 🆕 ADD THIS: Track search
+          await InteractionTracker().trackSearch(
+            searchQuery: query,
+            resultsCount: _results.length,
+          );
 
           if (_results.isEmpty) {
             setState(() {

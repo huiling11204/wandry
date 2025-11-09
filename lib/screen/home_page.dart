@@ -7,13 +7,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 import 'package:wandry/screen/setting_page.dart';
 import 'package:wandry/screen/search_page.dart';
 import 'package:wandry/screen/explore_page.dart';
 import 'package:wandry/screen/journey/my_trips_page.dart';
 
 class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
   @override
   _HomePageState createState() => _HomePageState();
 }
@@ -119,7 +120,7 @@ class _HomePageState extends State<HomePage> {
 class HomeContentPage extends StatefulWidget {
   final Function(int) onNavigate;
 
-  const HomeContentPage({required this.onNavigate});
+  const HomeContentPage({super.key, required this.onNavigate});
 
   @override
   _HomeContentPageState createState() => _HomeContentPageState();
@@ -468,7 +469,7 @@ class _HomeContentPageState extends State<HomeContentPage> {
                   ),
                 ),
                 SliverToBoxAdapter(
-                  child: Container(
+                  child: SizedBox(
                     height: 200,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
@@ -558,7 +559,7 @@ class _HomeContentPageState extends State<HomeContentPage> {
               ),
               SizedBox(height: 12).toSliver(),
               SliverToBoxAdapter(
-                child: Container(
+                child: SizedBox(
                   height: 220,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
@@ -625,7 +626,7 @@ class QuickActionCard extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
-  const QuickActionCard({
+  const QuickActionCard({super.key, 
     required this.icon,
     required this.title,
     required this.color,
@@ -679,7 +680,7 @@ class TripCard extends StatelessWidget {
   final Map<String, dynamic> trip;
   final String status;
 
-  const TripCard({required this.trip, required this.status});
+  const TripCard({super.key, required this.trip, required this.status});
 
   @override
   Widget build(BuildContext context) {
@@ -803,7 +804,7 @@ class PopularDestinationCard extends StatelessWidget {
   final Map<String, String> destination;
   final VoidCallback onTap;
 
-  const PopularDestinationCard({
+  const PopularDestinationCard({super.key, 
     required this.destination,
     required this.onTap,
   });
@@ -889,7 +890,7 @@ class PopularDestinationCard extends StatelessWidget {
 class TravelTipCard extends StatelessWidget {
   final Map<String, String> tip;
 
-  const TravelTipCard({required this.tip});
+  const TravelTipCard({super.key, required this.tip});
 
   @override
   Widget build(BuildContext context) {
@@ -1006,6 +1007,8 @@ extension SizedBoxSliver on SizedBox {
 // }
 
 class ProfilePage extends StatelessWidget {
+  const ProfilePage({super.key});
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;

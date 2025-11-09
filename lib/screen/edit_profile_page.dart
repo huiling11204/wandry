@@ -8,7 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class EditProfilePage extends StatefulWidget {
   final Map<String, dynamic> profileData;
 
-  const EditProfilePage({required this.profileData});
+  const EditProfilePage({super.key, required this.profileData});
 
   @override
   _EditProfilePageState createState() => _EditProfilePageState();
@@ -314,7 +314,7 @@ class EditProfileField extends StatelessWidget {
   final String? Function(String?)? validator;
   final TextInputType? keyboardType;
 
-  const EditProfileField({
+  const EditProfileField({super.key, 
     required this.label,
     required this.controller,
     this.validator,

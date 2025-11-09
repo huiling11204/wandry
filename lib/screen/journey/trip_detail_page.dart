@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../../backend/interaction_tracker.dart';
+import '../../widget/trip_rating_dialog.dart';
 
 class TripDetailPage extends StatefulWidget {
   final String tripId;
 
-  const TripDetailPage({required this.tripId});
+  const TripDetailPage({super.key, required this.tripId});
 
   @override
   _TripDetailPageState createState() => _TripDetailPageState();
@@ -86,6 +88,64 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
     }
   }
 
+  // Add this method to _TripDetailPageState in TripDetailPage
+  Future<void> _markTripAsCompleted() async {
+    try {
+      final tripDoc = await _firestore.collection('trip').doc(widget.tripId).get();
+      final tripData = tripDoc.data() as Map<String, dynamic>;
+
+      // Get visited places from itinerary
+      final itinerarySnapshot = await _firestore
+          .collection('itineraryItem')
+          .where('tripID', isEqualTo: widget.tripId)
+          .get();
+
+      List<String> visitedPlaces = itinerarySnapshot.docs
+          .map((doc) => doc.data()['locationID'] as String?)
+          .where((id) => id != null)
+          .cast<String>()
+          .toList();
+
+      // Update trip status
+      await _firestore.collection('trip').doc(widget.tripId).update({
+        'status': 'completed',
+        'completedDate': FieldValue.serverTimestamp(),
+      });
+
+      // 🆕 Track trip completion
+      await InteractionTracker().trackTripCompletion(
+        tripId: widget.tripId,
+        tripName: tripData['tripName'] ?? 'Trip',
+        destination: tripData['destination'] ?? '',
+        startDate: (tripData['startDate'] as Timestamp).toDate(),
+        endDate: (tripData['endDate'] as Timestamp).toDate(),
+        daysCount: visitedPlaces.length,
+      );
+
+      // Show rating dialog
+      if (mounted) {
+        await TripRatingDialog.show(
+          context,
+          tripId: widget.tripId,
+          tripName: tripData['tripName'] ?? 'Trip',
+          destination: tripData['destination'] ?? '',
+          startDate: (tripData['startDate'] as Timestamp).toDate(),
+          endDate: (tripData['endDate'] as Timestamp).toDate(),
+          visitedPlaces: visitedPlaces,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error completing trip: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -141,6 +201,12 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
                     ),
                   ),
                   actions: [
+                    if (trip['status'] != 'completed')
+                      IconButton(
+                        icon: Icon(Icons.check_circle_outline),
+                        tooltip: 'Mark as Completed',
+                        onPressed: _markTripAsCompleted,
+                      ),
                     IconButton(
                       icon: Icon(Icons.share),
                       onPressed: () {
@@ -153,28 +219,28 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
                     PopupMenuButton(
                       itemBuilder: (context) => [
                         PopupMenuItem(
+                          value: 'export',
                           child: ListTile(
                             leading: Icon(Icons.picture_as_pdf),
                             title: Text('Export to PDF'),
                             contentPadding: EdgeInsets.zero,
                           ),
-                          value: 'export',
                         ),
                         PopupMenuItem(
+                          value: 'edit',
                           child: ListTile(
                             leading: Icon(Icons.edit),
                             title: Text('Edit Trip'),
                             contentPadding: EdgeInsets.zero,
                           ),
-                          value: 'edit',
                         ),
                         PopupMenuItem(
+                          value: 'delete',
                           child: ListTile(
                             leading: Icon(Icons.delete, color: Colors.red),
                             title: Text('Delete', style: TextStyle(color: Colors.red)),
                             contentPadding: EdgeInsets.zero,
                           ),
-                          value: 'delete',
                         ),
                       ],
                       onSelected: (value) {
@@ -397,7 +463,7 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
                       ),
                     ),
                   );
-                }).toList(),
+                }),
               ],
             );
           },

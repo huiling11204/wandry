@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../journey/trip_preferences_page.dart';
 
 class TripBasicInfoPage extends StatefulWidget {
+  const TripBasicInfoPage({super.key});
+
   @override
   _TripBasicInfoPageState createState() => _TripBasicInfoPageState();
 }

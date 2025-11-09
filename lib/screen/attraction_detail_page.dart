@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' show sin, cos, sqrt, asin;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,7 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 class AttractionDetailPage extends StatefulWidget {
   final Map<String, dynamic> place;
 
-  const AttractionDetailPage({Key? key, required this.place}) : super(key: key);
+  const AttractionDetailPage({super.key, required this.place});
 
   @override
   State<AttractionDetailPage> createState() => _AttractionDetailPageState();
@@ -327,7 +326,7 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
                       if (mounted) Navigator.pop(context);
                     },
                   );
-                }).toList(),
+                }),
               ],
             ),
           );

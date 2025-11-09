@@ -7,6 +7,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'edit_profile_page.dart';
 
 class ViewProfilePage extends StatefulWidget {
+  const ViewProfilePage({super.key});
+
   @override
   _ViewProfilePageState createState() => _ViewProfilePageState();
 }
@@ -297,7 +299,7 @@ class ProfileField extends StatelessWidget {
   final String label;
   final String value;
 
-  const ProfileField({required this.label, required this.value});
+  const ProfileField({super.key, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {

@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'profile_page.dart';
 
 class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,7 +86,7 @@ class SettingsItem extends StatelessWidget {
   final VoidCallback onTap;
   final bool showArrow;
 
-  const SettingsItem({
+  const SettingsItem({super.key, 
     required this.icon,
     required this.title,
     required this.onTap,

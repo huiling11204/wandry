@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:wandry/screen/nearby_attractions_page.dart';
-import 'package:permission_handler/permission_handler.dart' as ph;
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});

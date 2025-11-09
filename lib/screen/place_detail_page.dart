@@ -5,11 +5,12 @@ import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../backend/interaction_tracker.dart';
 
 class PlaceDetailPage extends StatefulWidget {
   final Map<String, dynamic> place;
 
-  const PlaceDetailPage({Key? key, required this.place}) : super(key: key);
+  const PlaceDetailPage({super.key, required this.place});
 
   @override
   State<PlaceDetailPage> createState() => _PlaceDetailPageState();
@@ -32,6 +33,26 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   void initState() {
     super.initState();
     _initializeData();
+    _trackPlaceView();
+  }
+
+  void _trackPlaceView() {
+    try {
+      final tags = widget.place['tags'] as Map<String, dynamic>?;
+      final address = widget.place['address'] as Map<String, dynamic>?;
+
+      InteractionTracker().trackPlaceView(
+        placeId: widget.place['osmId']?.toString() ?? 'unknown',
+        placeName: widget.place['name']?.toString() ?? 'Unknown Place',
+        category: tags?['tourism']?.toString() ??
+            tags?['amenity']?.toString() ??
+            'general',
+        state: address?['state']?.toString(),
+        country: address?['country']?.toString(),
+      );
+    } catch (e) {
+      print('Error tracking view: $e');
+    }
   }
 
   Future<void> _initializeData() async {
@@ -865,7 +886,7 @@ out center;
                       if (mounted) Navigator.pop(context);
                     },
                   );
-                }).toList(),
+                }),
               ],
             ),
           );
@@ -882,13 +903,14 @@ out center;
     try {
       final user = FirebaseAuth.instance.currentUser!;
 
-      final locationRef =
-      FirebaseFirestore.instance.collection('location').doc();
+      final locationRef = FirebaseFirestore.instance.collection('location').doc();
+      final placeName = _details?['name']?.toString() ??
+          widget.place['name']?.toString() ??
+          'Unknown';
+
       await locationRef.set({
         'locationID': locationRef.id,
-        'locationName': _details?['name']?.toString() ??
-            widget.place['name']?.toString() ??
-            'Unknown',
+        'locationName': placeName,
         'description': _details?['description']?.toString() ?? '',
         'latitude': widget.place['latitude'] ?? 0.0,
         'longitude': widget.place['longitude'] ?? 0.0,
@@ -898,14 +920,28 @@ out center;
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      final itineraryRef =
-      FirebaseFirestore.instance.collection('itineraryItem').doc();
+      final itineraryRef = FirebaseFirestore.instance.collection('itineraryItem').doc();
       await itineraryRef.set({
         'itineraryItemID': itineraryRef.id,
         'tripID': tripId,
         'locationID': locationRef.id,
         'addedAt': FieldValue.serverTimestamp(),
       });
+
+      // 🆕 ADD THIS: Track place added to trip
+      final tags = widget.place['tags'] as Map<String, dynamic>?;
+      final address = widget.place['address'] as Map<String, dynamic>?;
+
+      await InteractionTracker().trackPlaceAddedToTrip(
+        placeId: widget.place['osmId']?.toString() ?? 'unknown',
+        placeName: placeName,
+        category: tags?['tourism']?.toString() ??
+            tags?['amenity']?.toString() ??
+            'general',
+        tripId: tripId,
+        state: address?['state']?.toString(),
+        country: address?['country']?.toString(),
+      );
 
       if (!mounted) return;
 
@@ -918,7 +954,6 @@ out center;
       );
     } catch (e) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to add: $e')),
       );

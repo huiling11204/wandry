@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,7 +16,7 @@ class TripGenerationLoading extends StatefulWidget {
   final Map<String, dynamic>? destinationData;
 
   const TripGenerationLoading({
-    Key? key,
+    super.key,
     required this.tripName,
     required this.tripDescription,
     required this.destination,
@@ -25,7 +26,7 @@ class TripGenerationLoading extends StatefulWidget {
     required this.endDate,
     required this.budgetLevel,
     this.destinationData,
-  }) : super(key: key);
+  });
 
   @override
   State<TripGenerationLoading> createState() => _TripGenerationLoadingState();
@@ -127,10 +128,31 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
       //   'userID': user.uid,
       // });
 
-      // For now, create a simple sample itinerary
-      await _createSampleItinerary(tripRef.id);
+      // NEW WAY (in _generateTrip)
+      print('Calling ML Cloud Function...');
+      final functions = FirebaseFunctions.instance;
+      final result = await functions.httpsCallable('py-generateCompleteTrip').call({
+        'tripID': tripRef.id,
+        'userID': user.uid,
+        'city': widget.city,
+        'country': widget.country,
+        'startDate': widget.startDate.toIso8601String(),
+        'endDate': widget.endDate.toIso8601String(),
+        'budgetLevel': widget.budgetLevel,
+      });
 
-      print('✓ Sample itinerary created');
+      print('✅ ML function completed: ${result.data}');
+      print('✓ Checking for itinerary items...');
+
+      final itemsCheck = await FirebaseFirestore.instance
+          .collection('itineraryItem')
+          .where('tripID', isEqualTo: tripRef.id)
+          .get();
+
+      print('✅ Found ${itemsCheck.docs.length} itinerary items created by ML');
+      if (itemsCheck.docs.isEmpty) {
+        print('❌ WARNING: No itinerary items were created by the ML function!');
+      }
 
       // Small delay to show completion
       await Future.delayed(const Duration(milliseconds: 500));
@@ -174,7 +196,7 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
     final minTotal = minPerDay * days;
     final maxTotal = maxPerDay * days;
 
-    return '\$${minTotal}-${maxTotal}';
+    return '\$$minTotal-$maxTotal';
   }
 
   Future<void> _createSampleItinerary(String tripId) async {
@@ -186,7 +208,8 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
     // Create sample itinerary items for each day
     final batch = FirebaseFirestore.instance.batch();
 
-    for (int day = 1; day <= duration && day <= 7; day++) {
+    for (int day = 1; day <= duration; day++) {
+      print('🔵 Creating items for day $day');
       // Morning activity
       final morningRef = FirebaseFirestore.instance.collection('itineraryItem').doc();
       batch.set(morningRef, {
@@ -237,6 +260,7 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
     }
 
     await batch.commit();
+    print('✅ Sample itinerary batch committed successfully');
   }
 
   @override

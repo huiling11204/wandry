@@ -22,15 +22,32 @@
   },
   "functions": [
     {
-      "source": "functions",
-      "codebase": "default",
+      "source": "functions-nodejs",
+      "codebase": "nodejs",
+      "runtime": "nodejs22",
       "ignore": [
         "node_modules",
         ".git",
         "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    },
+    {
+      "source": "functions-python",
+      "codebase": "python",
+      "runtime": "python312",
+      "prefix": "py",
+      "ignore": [
+        ".git",
+        "firebase-debug.log",
         "firebase-debug.*.log",
-        "*.local"
+        "venv",
+        "__pycache__"
       ]
     }
-  ]
+  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
 }

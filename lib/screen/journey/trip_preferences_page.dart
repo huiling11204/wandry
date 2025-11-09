@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'trip_generation_loading.dart';
 
 class TripPreferencesPage extends StatefulWidget {
@@ -11,10 +9,10 @@ class TripPreferencesPage extends StatefulWidget {
   final String tripDescription;
 
   const TripPreferencesPage({
-    Key? key,
+    super.key,
     required this.tripName,
     required this.tripDescription,
-  }) : super(key: key);
+  });
 
   @override
   State<TripPreferencesPage> createState() => _TripPreferencesPageState();
