@@ -29,6 +29,21 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
     super.dispose();
   }
 
+  // ✅ SAFE DATETIME CONVERTER
+  DateTime? _safeGetDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (e) {
+        print('⚠️ Could not parse date string: $value');
+        return null;
+      }
+    }
+    return null;
+  }
+
   Future<void> _deleteTrip() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -51,10 +66,35 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
 
     if (confirm == true) {
       try {
+        // 🔧 NAVIGATE AWAY FIRST, THEN DELETE
+        // Pop back to trips list
+        Navigator.of(context).popUntil((route) => route.isFirst);
+
+        // Show loading indicator
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 16),
+                Text('Deleting trip...'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+          ),
+        );
+
         // Delete trip document
         await _firestore.collection('trip').doc(widget.tripId).delete();
 
-        // Delete associated itinerary items
+        // Delete related itinerary items
         final items = await _firestore
             .collection('itineraryItem')
             .where('tripID', isEqualTo: widget.tripId)
@@ -66,8 +106,8 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
         }
         await batch.commit();
 
+        // Show success message
         if (mounted) {
-          Navigator.of(context).popUntil((route) => route.isFirst);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Trip deleted successfully'),
@@ -79,7 +119,7 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to delete trip'),
+              content: Text('Failed to delete trip: $e'),
               backgroundColor: Colors.red,
             ),
           );
@@ -88,13 +128,11 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
     }
   }
 
-  // Add this method to _TripDetailPageState in TripDetailPage
   Future<void> _markTripAsCompleted() async {
     try {
       final tripDoc = await _firestore.collection('trip').doc(widget.tripId).get();
       final tripData = tripDoc.data() as Map<String, dynamic>;
 
-      // Get visited places from itinerary
       final itinerarySnapshot = await _firestore
           .collection('itineraryItem')
           .where('tripID', isEqualTo: widget.tripId)
@@ -106,33 +144,36 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
           .cast<String>()
           .toList();
 
-      // Update trip status
       await _firestore.collection('trip').doc(widget.tripId).update({
         'status': 'completed',
         'completedDate': FieldValue.serverTimestamp(),
       });
 
-      // 🆕 Track trip completion
-      await InteractionTracker().trackTripCompletion(
-        tripId: widget.tripId,
-        tripName: tripData['tripName'] ?? 'Trip',
-        destination: tripData['destination'] ?? '',
-        startDate: (tripData['startDate'] as Timestamp).toDate(),
-        endDate: (tripData['endDate'] as Timestamp).toDate(),
-        daysCount: visitedPlaces.length,
-      );
+      // ✅ USE SAFE DATETIME CONVERTER
+      final startDate = _safeGetDateTime(tripData['startDate']);
+      final endDate = _safeGetDateTime(tripData['endDate']);
 
-      // Show rating dialog
-      if (mounted) {
-        await TripRatingDialog.show(
-          context,
+      if (startDate != null && endDate != null) {
+        await InteractionTracker().trackTripCompletion(
           tripId: widget.tripId,
           tripName: tripData['tripName'] ?? 'Trip',
           destination: tripData['destination'] ?? '',
-          startDate: (tripData['startDate'] as Timestamp).toDate(),
-          endDate: (tripData['endDate'] as Timestamp).toDate(),
-          visitedPlaces: visitedPlaces,
+          startDate: startDate,
+          endDate: endDate,
+          daysCount: visitedPlaces.length,
         );
+
+        if (mounted) {
+          await TripRatingDialog.show(
+            context,
+            tripId: widget.tripId,
+            tripName: tripData['tripName'] ?? 'Trip',
+            destination: tripData['destination'] ?? '',
+            startDate: startDate,
+            endDate: endDate,
+            visitedPlaces: visitedPlaces,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -162,8 +203,36 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
           }
 
           final trip = snapshot.data!.data() as Map<String, dynamic>;
-          final startDate = (trip['startDate'] as Timestamp).toDate();
-          final endDate = (trip['endDate'] as Timestamp).toDate();
+
+          // ✅ USE SAFE DATETIME CONVERTER
+          final startDate = _safeGetDateTime(trip['startDate']);
+          final endDate = _safeGetDateTime(trip['endDate']);
+
+          // Handle corrupted data
+          if (startDate == null || endDate == null) {
+            return Scaffold(
+              appBar: AppBar(title: Text('Error')),
+              body: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, size: 64, color: Colors.red),
+                    SizedBox(height: 16),
+                    Text('This trip has corrupted date information'),
+                    SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await _firestore.collection('trip').doc(widget.tripId).delete();
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      child: Text('Delete This Trip'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
 
           return NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) {
@@ -210,7 +279,6 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
                     IconButton(
                       icon: Icon(Icons.share),
                       onPressed: () {
-                        // TODO: Implement share
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Share feature coming soon')),
                         );
@@ -247,12 +315,10 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
                         if (value == 'delete') {
                           _deleteTrip();
                         } else if (value == 'export') {
-                          // TODO: Implement PDF export (Phase 7)
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('PDF export coming in Phase 7')),
                           );
                         } else if (value == 'edit') {
-                          // TODO: Implement edit
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('Edit feature coming soon')),
                           );
@@ -282,7 +348,6 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
             },
             body: Column(
               children: [
-                // Trip info card
                 Container(
                   margin: EdgeInsets.all(16),
                   padding: EdgeInsets.all(16),
@@ -346,8 +411,6 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
                     ],
                   ),
                 ),
-
-                // Tab content
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
@@ -392,7 +455,7 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'ML recommendations will appear here in Phase 3',
+                  'ML recommendations will appear here',
                   style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                   textAlign: TextAlign.center,
                 ),
@@ -432,28 +495,103 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
                 ),
                 ...dayItems.map((item) {
                   final data = item.data() as Map<String, dynamic>;
+                  final title = data['title'] as String? ?? 'Activity';
+                  final startTime = data['startTime'] as String? ?? '';
+                  final endTime = data['endTime'] as String? ?? '';
+                  final notes = data['notes'] as String? ?? '';
+                  final category = data['category'] as String? ?? 'attraction';
+
+                  // Choose icon based on category
+                  IconData categoryIcon = Icons.place;
+                  Color categoryColor = Color(0xFF2196F3);
+
+                  switch (category.toLowerCase()) {
+                    case 'restaurant':
+                    case 'food':
+                      categoryIcon = Icons.restaurant;
+                      categoryColor = Colors.orange;
+                      break;
+                    case 'hotel':
+                    case 'accommodation':
+                      categoryIcon = Icons.hotel;
+                      categoryColor = Colors.purple;
+                      break;
+                    case 'shopping':
+                      categoryIcon = Icons.shopping_bag;
+                      categoryColor = Colors.pink;
+                      break;
+                    case 'beach':
+                      categoryIcon = Icons.beach_access;
+                      categoryColor = Colors.cyan;
+                      break;
+                    case 'museum':
+                    case 'culture':
+                      categoryIcon = Icons.museum;
+                      categoryColor = Colors.brown;
+                      break;
+                    case 'entertainment':
+                      categoryIcon = Icons.movie;
+                      categoryColor = Colors.deepPurple;
+                      break;
+                    default:
+                      categoryIcon = Icons.place;
+                      categoryColor = Color(0xFF2196F3);
+                  }
+
                   return Card(
                     margin: EdgeInsets.only(bottom: 12),
                     child: ListTile(
                       leading: Container(
                         padding: EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Color(0xFF2196F3).withOpacity(0.1),
+                          color: categoryColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
-                          Icons.access_time,
-                          color: Color(0xFF2196F3),
+                          categoryIcon,
+                          color: categoryColor,
+                          size: 24,
                         ),
                       ),
                       title: Text(
-                        '${data['startTime']} - ${data['endTime']}',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        data['notes'] ?? 'No description',
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                              SizedBox(width: 4),
+                              Text(
+                                '$startTime - $endTime',
+                                style: TextStyle(
+                                  color: Colors.grey[700],
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (notes.isNotEmpty) ...[
+                            SizedBox(height: 4),
+                            Text(
+                              notes,
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
                       ),
                       trailing: IconButton(
                         icon: Icon(Icons.more_vert),
@@ -503,53 +641,53 @@ class _TripDetailPageState extends State<TripDetailPage> with SingleTickerProvid
 
   Widget _buildResourcesTab() {
     return ListView(
-      padding: EdgeInsets.all(16),
-      children: [
-        Card(
-          child: ListTile(
-            leading: Icon(Icons.flight, color: Color(0xFF2196F3)),
-            title: Text('Flights'),
-            subtitle: Text('Search for flights to your destination'),
-            trailing: Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-              // TODO: Open flight search
-            },
-          ),
-        ),
-        SizedBox(height: 8),
-        Card(
-          child: ListTile(
-            leading: Icon(Icons.hotel, color: Color(0xFF2196F3)),
-            title: Text('Accommodation'),
-            subtitle: Text('Find hotels and places to stay'),
-            trailing: Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-              // TODO: Open hotel search
-            },
-          ),
-        ),
-        SizedBox(height: 8),
-        Card(
-          child: ListTile(
-            leading: Icon(Icons.directions_car, color: Color(0xFF2196F3)),
-            title: Text('Transportation'),
-            subtitle: Text('Explore local transport options'),
-            trailing: Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-              // TODO: Open transport info
-            },
-          ),
-        ),
-        SizedBox(height: 16),
-        Text(
-          'Coming in Phase 7',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[500],
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
+        padding: EdgeInsets.all(16),
+        children: [
+    Card(
+    child: ListTile(
+    leading: Icon(Icons.flight, color: Color(0xFF2196F3)),
+    title: Text('Flights'),
+    subtitle: Text('Search for flights to your destination'),
+    trailing: Icon(Icons.arrow_forward_ios, size: 16),
+    onTap: () {
+    // TODO: Open flight search
+    },
+    ),
+    ),
+    SizedBox(height: 8),
+    Card(
+    child: ListTile(
+    leading: Icon(Icons.hotel, color: Color(0xFF2196F3)),
+    title: Text('Accommodation'),
+    subtitle: Text('Find hotels and places to stay'),
+    trailing: Icon(Icons.arrow_forward_ios, size: 16),
+    onTap: () {
+    // TODO: Open hotel search
+    },
+    ),
+    ),
+    SizedBox(height: 8),
+    Card(
+    child: ListTile(
+    leading: Icon(Icons.directions_car, color: Color(0xFF2196F3)),
+    title: Text('Transportation'),
+    subtitle: Text('Explore local transport options'),
+    trailing: Icon(Icons.arrow_forward_ios, size: 16),
+    onTap: () {
+      // TODO: Open transport info
+    },
+    ),
+    ),
+    SizedBox(height: 16),
+    Text(
+    'Coming in Phase 7',
+    style: TextStyle(
+    fontSize: 12,
+    color: Colors.grey[500],
+    ),
+    textAlign: TextAlign.center,
+    ),
+    ],
     );
+    }
   }
-}

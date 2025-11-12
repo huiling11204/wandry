@@ -37,7 +37,21 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
     super.dispose();
   }
 
-  // Add debug logging to _getTripsStream
+  // ✅ SAFE TIMESTAMP CONVERTER
+  DateTime? _safeGetDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (e) {
+        print('⚠️ Could not parse date string: $value');
+        return null;
+      }
+    }
+    return null;
+  }
+
   Stream<QuerySnapshot> _getTripsStream() {
     final user = _auth.currentUser;
     if (user == null) {
@@ -62,14 +76,14 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
       case 'Upcoming':
         return trips.where((trip) {
           final data = trip.data() as Map<String, dynamic>;
-          final startDate = (data['startDate'] as Timestamp?)?.toDate();
+          final startDate = _safeGetDateTime(data['startDate']);
           return startDate != null && startDate.isAfter(now);
         }).toList();
 
       case 'Past':
         return trips.where((trip) {
           final data = trip.data() as Map<String, dynamic>;
-          final endDate = (data['endDate'] as Timestamp?)?.toDate();
+          final endDate = _safeGetDateTime(data['endDate']);
           return endDate != null && endDate.isBefore(now);
         }).toList();
 
@@ -112,7 +126,6 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
       body: StreamBuilder<QuerySnapshot>(
         stream: _getTripsStream(),
         builder: (context, snapshot) {
-          // Loading state
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(
@@ -121,36 +134,26 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
             );
           }
 
-          // Error state - but check if user is authenticated
           if (snapshot.hasError) {
             print('Error loading trips: ${snapshot.error}');
-
-            // Check if user is authenticated
             final user = _auth.currentUser;
             if (user == null) {
               return _buildErrorState('Please log in to view your trips');
             }
-
-            // If authenticated but still error, might be permission issue
-            // Show empty state instead of scary error message
             return _buildEmptyState();
           }
 
-          // No data or empty - this is normal when starting
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return _buildEmptyState();
           }
 
-          // Filter trips based on selected tab
           final allTrips = snapshot.data!.docs;
           final filteredTrips = _filterTrips(allTrips);
 
-          // Show empty state for filtered results
           if (filteredTrips.isEmpty) {
             return _buildFilteredEmptyState();
           }
 
-          // Show trips list
           return RefreshIndicator(
             onRefresh: () async {
               setState(() {});
@@ -173,7 +176,7 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
             MaterialPageRoute(
               builder: (context) => TripBasicInfoPage(),
             ),
-          ).then((_) => setState(() {})); // Refresh after creating trip
+          ).then((_) => setState(() {}));
         },
         backgroundColor: const Color(0xFF4A90E2),
         icon: const Icon(Icons.add, color: Colors.white),
@@ -354,32 +357,69 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
     final data = doc.data() as Map<String, dynamic>;
     final tripName = data['tripName'] as String? ?? 'Unnamed Trip';
     final destination = data['destination'] as String? ?? 'Unknown';
-    final startDate = (data['startDate'] as Timestamp?)?.toDate();
-    final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+    // ✅ USE SAFE DATETIME CONVERTER
+    final startDate = _safeGetDateTime(data['startDate']);
+    final endDate = _safeGetDateTime(data['endDate']);
     final budgetLevel = data['budgetLevel'] as String? ?? 'Medium';
+
+    // Handle corrupted data gracefully
+    if (startDate == null || endDate == null) {
+      return Card(
+        margin: const EdgeInsets.only(bottom: 16),
+        child: ListTile(
+          leading: Icon(Icons.error_outline, color: Colors.orange),
+          title: Text(tripName),
+          subtitle: Text('⚠️ Date information corrupted'),
+          trailing: IconButton(
+            icon: Icon(Icons.delete, color: Colors.red),
+            onPressed: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('Delete Corrupted Trip?'),
+                  content: Text('This trip has corrupted data. Delete it?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                      child: Text('Delete'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                await _firestore.collection('trip').doc(doc.id).delete();
+                setState(() {});
+              }
+            },
+          ),
+        ),
+      );
+    }
 
     // Calculate trip duration
     String duration = '';
-    if (startDate != null && endDate != null) {
-      final days = endDate.difference(startDate).inDays + 1;
-      duration = '$days ${days == 1 ? 'day' : 'days'}';
-    }
+    final days = endDate.difference(startDate).inDays + 1;
+    duration = '$days ${days == 1 ? 'day' : 'days'}';
 
     // Format dates
-    String dateRange = '';
-    if (startDate != null && endDate != null) {
-      dateRange = '${_formatDate(startDate)} - ${_formatDate(endDate)}';
-    }
+    String dateRange = '${_formatDate(startDate)} - ${_formatDate(endDate)}';
 
     // Determine trip status
     final now = DateTime.now();
     String status = 'Upcoming';
     Color statusColor = const Color(0xFF4CAF50);
 
-    if (endDate != null && endDate.isBefore(now)) {
+    if (endDate.isBefore(now)) {
       status = 'Completed';
       statusColor = Colors.grey;
-    } else if (startDate != null && startDate.isBefore(now) && endDate != null && endDate.isAfter(now)) {
+    } else if (startDate.isBefore(now) && endDate.isAfter(now)) {
       status = 'In Progress';
       statusColor = const Color(0xFFFF9800);
     }
@@ -405,7 +445,6 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header with status badge
               Row(
                 children: [
                   Expanded(
@@ -441,8 +480,6 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
                 ],
               ),
               const SizedBox(height: 12),
-
-              // Destination
               Row(
                 children: [
                   const Icon(
@@ -465,64 +502,57 @@ class _MyTripsPageState extends State<MyTripsPage> with SingleTickerProviderStat
                 ],
               ),
               const SizedBox(height: 8),
-
-              // Date range
-              if (dateRange.isNotEmpty)
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.calendar_today,
-                      size: 18,
-                      color: Color(0xFF4A90E2),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        dateRange,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              const SizedBox(height: 12),
-
-              // Footer with duration and budget
               Row(
                 children: [
-                  if (duration.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4A90E2).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.access_time,
-                            size: 14,
-                            color: Color(0xFF4A90E2),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            duration,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF4A90E2),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                  const Icon(
+                    Icons.calendar_today,
+                    size: 18,
+                    color: Color(0xFF4A90E2),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      dateRange,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[700],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                  ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4A90E2).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.access_time,
+                          size: 14,
+                          color: Color(0xFF4A90E2),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          duration,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF4A90E2),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,

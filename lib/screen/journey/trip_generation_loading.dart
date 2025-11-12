@@ -2,6 +2,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'trip_detail_page.dart';
 
 class TripGenerationLoading extends StatefulWidget {
@@ -37,13 +38,15 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
   late AnimationController _animationController;
   int _currentStep = 0;
   String? _errorMessage;
+  StreamSubscription? _tripStatusSubscription;
+  String _statusMessage = 'Initializing...';
 
   final List<String> _steps = [
-    'Analyzing preferences...',
-    'Finding best attractions...',
-    'Optimizing routes...',
-    'Checking weather...',
-    'Creating itinerary...',
+    'Creating trip...',
+    'Analyzing destination...',
+    'Finding attractions...',
+    'Building itinerary...',
+    'Finalizing details...',
   ];
 
   @override
@@ -60,6 +63,7 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
   @override
   void dispose() {
     _animationController.dispose();
+    _tripStatusSubscription?.cancel();
     super.dispose();
   }
 
@@ -70,30 +74,12 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
         throw Exception('User not logged in');
       }
 
-      // Step 1: Analyzing preferences
-      setState(() => _currentStep = 0);
-      await Future.delayed(const Duration(seconds: 1));
+      setState(() {
+        _currentStep = 0;
+        _statusMessage = 'Creating your trip...';
+      });
 
-      // Step 2: Finding attractions (simulate)
-      setState(() => _currentStep = 1);
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Step 3: Optimizing routes (simulate)
-      setState(() => _currentStep = 2);
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Step 4: Checking weather (simulate)
-      setState(() => _currentStep = 3);
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Step 5: Creating itinerary
-      setState(() => _currentStep = 4);
-
-      // FIXED: Changed collection name from 'trips' to 'trip'
-      // FIXED: Using consistent field names
       final tripRef = FirebaseFirestore.instance.collection('trip').doc();
-
-      // Calculate estimated budget range based on budget level
       String estimatedBudget = _calculateBudgetRange(widget.budgetLevel);
 
       await tripRef.set({
@@ -101,36 +87,30 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
         'userID': user.uid,
         'tripName': widget.tripName,
         'tripDescription': widget.tripDescription,
-        'destination': widget.destination, // Full destination string
+        'destination': widget.destination,
         'destinationCity': widget.city,
         'destinationCountry': widget.country,
         'startDate': Timestamp.fromDate(widget.startDate),
         'endDate': Timestamp.fromDate(widget.endDate),
-        'budgetLevel': widget.budgetLevel, // Low, Medium, High
-        'estimatedBudget': estimatedBudget, // e.g., "\$500-1000"
-        'createdAt': FieldValue.serverTimestamp(), // ✓ FIXED: Using 'createdAt' consistently
+        'budgetLevel': widget.budgetLevel,
+        'estimatedBudget': estimatedBudget,
+        'createdAt': FieldValue.serverTimestamp(),
         'lastUpdatedDate': FieldValue.serverTimestamp(),
-        'status': 'active', // active, completed, cancelled
+        'status': 'active',
+        'generationStatus': 'pending',
       });
 
       print('✓ Trip created successfully: ${tripRef.id}');
+      _listenToTripStatus(tripRef.id);
 
-      // TODO: In Phase 3, this is where you'll call the ML Cloud Function:
-      // final result = await functions.httpsCallable('generateCompleteTrip').call({
-      //   'tripID': tripRef.id,
-      //   'tripName': widget.tripName,
-      //   'destination': widget.destination,
-      //   'city': widget.city,
-      //   'country': widget.country,
-      //   'startDate': widget.startDate.toIso8601String(),
-      //   'endDate': widget.endDate.toIso8601String(),
-      //   'budgetLevel': widget.budgetLevel,
-      //   'userID': user.uid,
-      // });
+      setState(() {
+        _currentStep = 1;
+        _statusMessage = 'Starting trip generation...';
+      });
 
-      // NEW WAY (in _generateTrip)
+      final functions = FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+
       print('Calling ML Cloud Function...');
-      final functions = FirebaseFunctions.instance;
       final result = await functions.httpsCallable('py-generateCompleteTrip').call({
         'tripID': tripRef.id,
         'userID': user.uid,
@@ -141,41 +121,87 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
         'budgetLevel': widget.budgetLevel,
       });
 
-      print('✅ ML function completed: ${result.data}');
-      print('✓ Checking for itinerary items...');
+      print('✅ Function called: ${result.data}');
 
-      final itemsCheck = await FirebaseFirestore.instance
-          .collection('itineraryItem')
-          .where('tripID', isEqualTo: tripRef.id)
-          .get();
+      setState(() {
+        _currentStep = 2;
+        _statusMessage = 'Processing in background...';
+      });
 
-      print('✅ Found ${itemsCheck.docs.length} itinerary items created by ML');
-      if (itemsCheck.docs.isEmpty) {
-        print('❌ WARNING: No itinerary items were created by the ML function!');
-      }
-
-      // Small delay to show completion
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // Navigate to trip detail page
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (context) => TripDetailPage(tripId: tripRef.id),
-          ),
-              (route) => route.isFirst, // Remove all routes except home
-        );
-      }
     } catch (e) {
       print('❌ Error generating trip: $e');
       setState(() {
         _errorMessage = 'Failed to generate trip. Please try again.\n\nError: ${e.toString()}';
       });
+      _tripStatusSubscription?.cancel();
+    }
+  }
+
+  void _listenToTripStatus(String tripId) {
+    print('👂 Listening to trip status for: $tripId');
+
+    _tripStatusSubscription = FirebaseFirestore.instance
+        .collection('trip')
+        .doc(tripId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!snapshot.exists) return;
+
+      final data = snapshot.data();
+      if (data == null) return;
+
+      final generationStatus = data['generationStatus'] as String?;
+      print('📊 Status update: $generationStatus');
+
+      setState(() {
+        switch (generationStatus) {
+          case 'pending':
+            _currentStep = 1;
+            _statusMessage = 'Waiting to start...';
+            break;
+
+          case 'processing':
+            _currentStep = 3;
+            _statusMessage = 'Generating your perfect itinerary...';
+            break;
+
+          case 'completed':
+            _currentStep = 4;
+            _statusMessage = 'Trip ready!';
+            _onTripCompleted(tripId);
+            break;
+
+          case 'failed':
+            final error = data['generationError'] as String? ?? 'Unknown error';
+            _errorMessage = 'Generation failed: $error';
+            _tripStatusSubscription?.cancel();
+            break;
+        }
+      });
+    }, onError: (error) {
+      print('❌ Listener error: $error');
+      setState(() {
+        _errorMessage = 'Connection error: ${error.toString()}';
+      });
+    });
+  }
+
+  Future<void> _onTripCompleted(String tripId) async {
+    print('✅ Trip generation completed!');
+    await Future.delayed(const Duration(milliseconds: 800));
+    _tripStatusSubscription?.cancel();
+
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (context) => TripDetailPage(tripId: tripId),
+        ),
+            (route) => route.isFirst,
+      );
     }
   }
 
   String _calculateBudgetRange(String budgetLevel) {
-    // Calculate per day budget estimate
     final days = widget.endDate.difference(widget.startDate).inDays + 1;
 
     int minPerDay, maxPerDay;
@@ -188,7 +214,7 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
         minPerDay = 150;
         maxPerDay = 300;
         break;
-      default: // Medium
+      default:
         minPerDay = 70;
         maxPerDay = 140;
     }
@@ -199,79 +225,15 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
     return '\$$minTotal-$maxTotal';
   }
 
-  Future<void> _createSampleItinerary(String tripId) async {
-    // This is a placeholder. In Phase 3, the ML model will generate this
-    final startDate = widget.startDate;
-    final endDate = widget.endDate;
-    final duration = endDate.difference(startDate).inDays + 1;
-
-    // Create sample itinerary items for each day
-    final batch = FirebaseFirestore.instance.batch();
-
-    for (int day = 1; day <= duration; day++) {
-      print('🔵 Creating items for day $day');
-      // Morning activity
-      final morningRef = FirebaseFirestore.instance.collection('itineraryItem').doc();
-      batch.set(morningRef, {
-        'itineraryItemID': morningRef.id,
-        'tripID': tripId,
-        'dayNumber': day,
-        'startTime': '09:00',
-        'endTime': '12:00',
-        'orderInDay': 0,
-        'title': 'Morning Exploration',
-        'notes': 'Sample morning activity - ML recommendations will replace this in Phase 3',
-        'locationID': null, // Will be populated by ML in Phase 3
-        'activityID': null,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      // Afternoon activity
-      final afternoonRef = FirebaseFirestore.instance.collection('itineraryItem').doc();
-      batch.set(afternoonRef, {
-        'itineraryItemID': afternoonRef.id,
-        'tripID': tripId,
-        'dayNumber': day,
-        'startTime': '14:00',
-        'endTime': '17:00',
-        'orderInDay': 1,
-        'title': 'Afternoon Adventure',
-        'notes': 'Sample afternoon activity - ML recommendations will replace this in Phase 3',
-        'locationID': null,
-        'activityID': null,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      // Evening activity
-      final eveningRef = FirebaseFirestore.instance.collection('itineraryItem').doc();
-      batch.set(eveningRef, {
-        'itineraryItemID': eveningRef.id,
-        'tripID': tripId,
-        'dayNumber': day,
-        'startTime': '19:00',
-        'endTime': '21:00',
-        'orderInDay': 2,
-        'title': 'Evening Dining',
-        'notes': 'Sample evening activity - ML recommendations will replace this in Phase 3',
-        'locationID': null,
-        'activityID': null,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-
-    await batch.commit();
-    print('✅ Sample itinerary batch committed successfully');
-  }
-
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () async => _errorMessage != null, // Allow back only on error
+      onWillPop: () async => _errorMessage != null,
       child: Scaffold(
         backgroundColor: Colors.white,
         body: SafeArea(
           child: Center(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(32),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -293,7 +255,7 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
                         ),
                       ),
                     ),
-                    const SizedBox(height: 48),
+                    const SizedBox(height: 32),
 
                     // Title
                     const Text(
@@ -305,21 +267,22 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-                    // Current step
+                    // Current status message
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 300),
                       child: Text(
-                        _steps[_currentStep],
-                        key: ValueKey<int>(_currentStep),
+                        _statusMessage,
+                        key: ValueKey<String>(_statusMessage),
                         style: TextStyle(
                           fontSize: 16,
                           color: Colors.grey[600],
                         ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
 
                     // Progress indicator
                     LinearProgressIndicator(
@@ -327,7 +290,7 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
                       backgroundColor: Colors.grey[200],
                       valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
                     // Progress text
                     Text(
@@ -337,11 +300,11 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
                         color: Colors.grey[500],
                       ),
                     ),
-                    const SizedBox(height: 48),
+                    const SizedBox(height: 32),
 
                     // Steps checklist
                     Container(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.grey[50],
                         borderRadius: BorderRadius.circular(16),
@@ -352,7 +315,7 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
                           final isCurrent = index == _currentStep;
 
                           return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            padding: const EdgeInsets.symmetric(vertical: 6),
                             child: Row(
                               children: [
                                 Container(
@@ -391,6 +354,38 @@ class _TripGenerationLoadingState extends State<TripGenerationLoading>
                             ),
                           );
                         }),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Helpful message
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2196F3).withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF2196F3).withOpacity(0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: const Color(0xFF2196F3),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'This may take 30-60 seconds. Feel free to wait or come back later!',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ] else ...[

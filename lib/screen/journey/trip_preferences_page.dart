@@ -664,9 +664,51 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
         return;
       }
 
-      // Extract city and country
-      final city = _selectedDestination!['city'] ?? '';
-      final country = _selectedDestination!['country'] ?? '';
+      // Extract city and country from selected destination
+      String city = (_selectedDestination!['city'] ?? '').toString().trim();
+      String country = (_selectedDestination!['country'] ?? '').toString().trim();
+
+      // 🔧 FALLBACK: If city/country are empty, try parsing from destination text
+      if (city.isEmpty || country.isEmpty) {
+        final destinationText = _destinationController.text.trim();
+
+        // Try to parse "City, Country" or "City, State, Country" format
+        final parts = destinationText.split(',').map((s) => s.trim()).toList();
+
+        if (parts.length >= 2) {
+          // Example: "Tokyo, Japan" → city="Tokyo", country="Japan"
+          // Example: "Paris, France, Europe" → city="Paris", country="Europe"
+          if (city.isEmpty) city = parts[0];
+          if (country.isEmpty) country = parts[parts.length - 1]; // Last part is usually country
+        } else if (parts.length == 1) {
+          // If only one part, use it as both (better than empty)
+          if (city.isEmpty) city = parts[0];
+          if (country.isEmpty) country = parts[0];
+        }
+      }
+
+      // 🔧 VALIDATION: Ensure city and country are not empty
+      if (city.isEmpty || country.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Cannot determine city and country from destination. Please try selecting a different destination.',
+            ),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
+      // 🔍 DEBUG: Print what we're sending (helps with troubleshooting)
+      print('🔍 Destination Information:');
+      print('   Display Name: ${_destinationController.text}');
+      print('   City: $city');
+      print('   Country: $country');
+      print('   Start Date: $_startDate');
+      print('   End Date: $_endDate');
+      print('   Budget: $_budgetLevel');
 
       // Navigate to loading/generation page
       Navigator.push(
