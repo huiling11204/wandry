@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:wandry/backend/userAuth.dart';
+import 'terms_and_conditions_page.dart';  // Import the Terms page
+import 'privacy_policy_page.dart';        // Import the Privacy Policy page
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -624,8 +626,13 @@ class _RegisterPageState extends State<RegisterPage> {
                             WidgetSpan(
                               child: GestureDetector(
                                 onTap: _isLoading ? null : () {
-                                  // TODO: Navigate to Terms & Conditions page
-                                  print('Terms & Conditions clicked');
+                                  // Navigate to Terms & Conditions page
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TermsAndConditionsPage(),
+                                    ),
+                                  );
                                 },
                                 child: Text(
                                   'Terms & Conditions',
@@ -641,8 +648,13 @@ class _RegisterPageState extends State<RegisterPage> {
                             WidgetSpan(
                               child: GestureDetector(
                                 onTap: _isLoading ? null : () {
-                                  // TODO: Navigate to Privacy Policy page
-                                  print('Privacy Policy clicked');
+                                  // Navigate to Privacy Policy page
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => PrivacyPolicyPage(),
+                                    ),
+                                  );
                                 },
                                 child: Text(
                                   'Privacy Policy',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'login_page.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
@@ -42,11 +43,11 @@ class _WelcomePageState extends State<WelcomePage> {
             children: [
               Text(
                 'Wandry',
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
+                style: GoogleFonts.jainiPurva(
+                  fontSize: 60,
+                  fontWeight: FontWeight.w500,
                   color: Colors.white,
-                  fontFamily: 'Poppins',
+                  letterSpacing: 1.0,
                 ),
               ),
               SizedBox(height: 20),
