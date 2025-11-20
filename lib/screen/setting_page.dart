@@ -1,9 +1,7 @@
-// ============================================
-// SETTINGS PAGE
-// ============================================
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'profile_page.dart';
+import 'package:wandry/screen/feedback/feedback_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -36,8 +34,9 @@ class SettingsPage extends StatelessWidget {
             icon: Icons.feedback_outlined,
             title: 'Feedback',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Feedback feature coming soon')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => FeedbackPage()),
               );
             },
           ),
@@ -86,7 +85,7 @@ class SettingsItem extends StatelessWidget {
   final VoidCallback onTap;
   final bool showArrow;
 
-  const SettingsItem({super.key, 
+  const SettingsItem({super.key,
     required this.icon,
     required this.title,
     required this.onTap,
