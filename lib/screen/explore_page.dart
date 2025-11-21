@@ -1,8 +1,11 @@
+// lib/screen/explore_page.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:wandry/screen/nearby_attractions_page.dart';
+import '../controller/location_controller.dart';
+import '../widget/permission_dialog.dart';
+import 'nearby_attractions_page.dart';
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
@@ -18,10 +21,9 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
   String _currentAddress = 'Fetching address...';
   Timer? _permissionCheckTimer;
   bool _isCheckingPermissions = false;
-  bool _wasPermissionDeniedForever = false; // NEW: Track if we need to request permission
+  bool _wasPermissionDeniedForever = false;
 
-  // Search parameters with more options
-  double _searchRadius = 1.0; // in kilometers
+  double _searchRadius = 1.0;
   final List<double> _radiusOptions = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0];
 
   @override
@@ -38,13 +40,11 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // Detect when app resumes from background
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.resumed) {
-      // Small delay to ensure permissions are updated
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted && _locationError != null) {
           _checkAndRetryLocation();
@@ -53,7 +53,6 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
     }
   }
 
-  // Start periodic permission checking when user goes to settings
   void _startPermissionChecking() {
     _permissionCheckTimer?.cancel();
 
@@ -61,17 +60,15 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
 
     setState(() {
       _isCheckingPermissions = true;
-      _wasPermissionDeniedForever = true; // Remember we need to request permission
-      _locationError = null; // Clear error while checking
+      _wasPermissionDeniedForever = true;
+      _locationError = null;
     });
 
-    // Check every 2 seconds for up to 2 minutes
     int checkCount = 0;
     _permissionCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
       checkCount++;
       print('Permission check #$checkCount');
 
-      // Stop after 60 checks (2 minutes)
       if (checkCount > 60 || !mounted) {
         print('Stopping permission checks (timeout or widget disposed)');
         timer.cancel();
@@ -79,7 +76,6 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
           setState(() {
             _isCheckingPermissions = false;
             _wasPermissionDeniedForever = false;
-            // Restore error if location still not available
             if (_currentPosition == null) {
               _locationError = 'Location permissions are permanently denied. Please enable them in app settings.';
             }
@@ -90,7 +86,6 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
 
       await _checkAndRetryLocation();
 
-      // If location is retrieved successfully, stop checking
       if (_currentPosition != null || _isLoadingLocation) {
         print('Stopping permission checks (location obtained or loading)');
         timer.cancel();
@@ -104,23 +99,19 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
     });
   }
 
-  // Check if permissions are now granted and retry
   Future<void> _checkAndRetryLocation() async {
-    if (_isLoadingLocation) return; // Don't check if already loading
+    if (_isLoadingLocation) return;
 
     try {
-      LocationPermission permission = await Geolocator.checkPermission();
+      bool isGranted = await LocationController.isPermissionGranted();
 
-      print('Checking permission status: $permission');
+      print('Checking permission status: granted=$isGranted');
 
-      // If permission is now granted, retry getting location
-      if (permission == LocationPermission.whileInUse ||
-          permission == LocationPermission.always) {
+      if (isGranted) {
         if (_locationError != null || _currentPosition == null) {
           print('Permission granted! Retrying location...');
           await _getCurrentLocation();
 
-          // Show success notification if location is now available
           if (mounted && _currentPosition != null) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -137,22 +128,13 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
             );
           }
         }
-      }
-      // NEW: If permission changed from deniedForever to denied (Ask every time)
-      // we need to request permission again
-      else if (permission == LocationPermission.denied && _wasPermissionDeniedForever) {
-        print('Permission is now askable! Requesting permission...');
+      } else if (_wasPermissionDeniedForever) {
+        bool isPermanentlyDenied = await LocationController.isPermissionPermanentlyDenied();
 
-        // Request permission (will show dialog to user)
-        LocationPermission newPermission = await Geolocator.requestPermission();
-        print('Permission after request: $newPermission');
-
-        if (newPermission == LocationPermission.whileInUse ||
-            newPermission == LocationPermission.always) {
-          print('User granted permission! Getting location...');
+        if (!isPermanentlyDenied) {
+          print('Permission is now askable! Requesting permission...');
           await _getCurrentLocation();
 
-          // Show success notification
           if (mounted && _currentPosition != null) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -175,7 +157,6 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
     }
   }
 
-  // IMPROVED: Get current location with better permission handling
   Future<void> _getCurrentLocation() async {
     setState(() {
       _isLoadingLocation = true;
@@ -183,221 +164,76 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
     });
 
     try {
-      // Check if location services are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        throw Exception('Location services are disabled. Please enable them in your device settings.');
-      }
-
-      // Check for permissions
-      LocationPermission permission = await Geolocator.checkPermission();
-
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          throw Exception('Location permission denied. Please allow location access to use this feature.');
-        }
-      }
-
-      // IMPROVED: Handle permanently denied permissions
-      if (permission == LocationPermission.deniedForever) {
-        _showPermissionDeniedDialog();
-        throw Exception('Location permissions are permanently denied. Please enable them in app settings.');
-      }
-
-      // Get position
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      Position position = await LocationController.getCurrentLocation();
 
       setState(() {
         _currentPosition = position;
         _isLoadingLocation = false;
       });
 
-      // Get address from coordinates
-      _getAddressFromCoordinates(position.latitude, position.longitude);
+      String address = await LocationController.getAddressFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      setState(() {
+        _currentAddress = address;
+      });
     } catch (e) {
+      bool isPermanentlyDenied = await LocationController.isPermissionPermanentlyDenied();
+
       setState(() {
         _locationError = e.toString();
         _isLoadingLocation = false;
         _currentAddress = 'Unable to fetch address';
       });
+
+      if (isPermanentlyDenied && mounted) {
+        _showPermissionDeniedDialog();
+      }
     }
   }
 
-  // NEW: Show dialog when permissions are permanently denied
   void _showPermissionDeniedDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Icon(
-                Icons.location_off,
-                color: Colors.red[700],
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Location Permission Required',
-                  style: TextStyle(fontSize: 18),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Location access has been permanently denied. To use this feature, you need to:',
-                style: TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              _buildPermissionStep('1', 'Open App Settings'),
-              _buildPermissionStep('2', 'Find "Permissions" or "Location"'),
-              _buildPermissionStep('3', 'Enable Location Access'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
-                ),
-                child: Row(
+        return PermissionDialog(
+          onOpenSettings: () async {
+            Navigator.of(context).pop();
+            _startPermissionChecking();
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
                   children: [
-                    Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'The app will automatically detect when you return and retry',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text('Waiting for you to enable location...'),
                     ),
                   ],
                 ),
+                duration: Duration(seconds: 5),
+                backgroundColor: Color(0xFF4A90E2),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-            ElevatedButton.icon(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                // Start checking for permission changes
-                _startPermissionChecking();
-                // Show notification
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text('Waiting for you to enable location...'),
-                        ),
-                      ],
-                    ),
-                    duration: const Duration(seconds: 5),
-                    backgroundColor: const Color(0xFF4A90E2),
-                  ),
-                );
-                // Open app settings
-                await Geolocator.openAppSettings();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A90E2),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              icon: const Icon(Icons.settings, size: 18),
-              label: const Text('Open Settings'),
-            ),
-          ],
+            );
+
+            await LocationController.openAppSettings();
+          },
         );
       },
     );
   }
 
-  Widget _buildPermissionStep(String number, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: const Color(0xFF4A90E2),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                number,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Get address from coordinates
-  Future<void> _getAddressFromCoordinates(double lat, double lon) async {
-    try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lon);
-      if (placemarks.isNotEmpty) {
-        Placemark place = placemarks[0];
-        setState(() {
-          _currentAddress = '${place.locality ?? ''}, ${place.administrativeArea ?? ''}, ${place.country ?? ''}';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _currentAddress = 'Address unavailable';
-      });
-    }
-  }
-
-  // Navigate to Nearby Attractions Page
   void _navigateToNearbyAttractions() {
     if (_currentPosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -439,7 +275,6 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
                 const Text(
                   'Explore',
                   style: TextStyle(
@@ -538,7 +373,7 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
                           ],
                         )
                       else if (_isCheckingPermissions)
-                        Row(
+                        const Row(
                           children: [
                             SizedBox(
                               width: 16,
@@ -609,18 +444,18 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
                               color: Colors.white.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Row(
+                            child: const Row(
                               children: [
-                                const Icon(
+                                Icon(
                                   Icons.error_outline,
                                   color: Colors.white70,
                                   size: 18,
                                 ),
-                                const SizedBox(width: 8),
+                                SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     'Location unavailable',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: Colors.white70,
                                       fontSize: 13,
                                     ),
@@ -723,11 +558,7 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildStatItem(
-                          Icons.explore,
-                          'Ready',
-                          'to Explore',
-                        ),
+                        _buildStatItem(Icons.explore, 'Ready', 'to Explore'),
                         Container(
                           width: 1,
                           height: 40,
@@ -794,11 +625,9 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
                               width: double.infinity,
                               child: ElevatedButton.icon(
                                 onPressed: () async {
-                                  // Start checking for permission changes
                                   _startPermissionChecking();
-                                  // Show notification
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
+                                    const SnackBar(
                                       content: Row(
                                         children: [
                                           SizedBox(
@@ -809,17 +638,17 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
                                               valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                             ),
                                           ),
-                                          const SizedBox(width: 12),
-                                          const Expanded(
+                                          SizedBox(width: 12),
+                                          Expanded(
                                             child: Text('Waiting for you to enable location...'),
                                           ),
                                         ],
                                       ),
-                                      duration: const Duration(seconds: 5),
-                                      backgroundColor: const Color(0xFF4A90E2),
+                                      duration: Duration(seconds: 5),
+                                      backgroundColor: Color(0xFF4A90E2),
                                     ),
                                   );
-                                  await Geolocator.openAppSettings();
+                                  await LocationController.openAppSettings();
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.red[700],
@@ -874,12 +703,12 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
                       disabledBackgroundColor: Colors.grey[300],
                       shadowColor: const Color(0xFF4A90E2).withOpacity(0.5),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.search, size: 22),
-                        const SizedBox(width: 12),
-                        const Text(
+                        Icon(Icons.search, size: 22),
+                        SizedBox(width: 12),
+                        Text(
                           'Find Nearby Attractions',
                           style: TextStyle(
                             fontSize: 16,

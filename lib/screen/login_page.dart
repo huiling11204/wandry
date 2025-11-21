@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:wandry/backend/userAuth.dart';
+import '../controller/userAuth.dart';
+import '../utilities/validators.dart';
+import '../widget/custom_text_field.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -23,61 +25,43 @@ class _LoginPageState extends State<LoginPage> {
   String _emailError = '';
   String _passwordError = '';
 
+  // Focus nodes for border color changes
+  final FocusNode _emailFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
     _emailController.addListener(_validateEmail);
     _passwordController.addListener(_validatePassword);
+
+    // Listen to focus changes to trigger rebuilds
+    _emailFocusNode.addListener(() => setState(() {}));
+    _passwordFocusNode.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
   void _validateEmail() {
     setState(() {
       _email = _emailController.text;
-      final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
-
-      if (_email.isEmpty) {
-        _emailError = '';
-        _isEmailValid = false;
-      } else if (!emailRegex.hasMatch(_email)) {
-        _emailError = 'Please enter a valid email format';
-        _isEmailValid = false;
-      } else {
-        _emailError = '';
-        _isEmailValid = true;
-      }
+      _emailError = Validators.validateEmail(_email) ?? '';
+      _isEmailValid = Validators.isEmailValid(_email);
     });
   }
 
   void _validatePassword() {
     setState(() {
       _password = _passwordController.text;
-
-      if (_password.isEmpty) {
-        _passwordError = '';
-        _isPasswordValid = false;
-        return;
-      }
-
-      bool hasMinLength = _password.length >= 8;
-      bool hasUppercase = RegExp(r'[A-Z]').hasMatch(_password);
-      bool hasLowercase = RegExp(r'[a-z]').hasMatch(_password);
-      bool hasNumber = RegExp(r'[0-9]').hasMatch(_password);
-      bool hasSpecialChar = RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(_password);
-
-      if (hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecialChar) {
-        _passwordError = '';
-        _isPasswordValid = true;
-      } else {
-        _passwordError = 'Invalid Password';
-        _isPasswordValid = false;
-      }
+      _passwordError = Validators.validatePassword(_password) ?? '';
+      _isPasswordValid = Validators.isPasswordValid(_password);
     });
   }
 
@@ -99,7 +83,7 @@ class _LoginPageState extends State<LoginPage> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Container(
-            padding: EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -116,7 +100,7 @@ class _LoginPageState extends State<LoginPage> {
                     size: 40,
                   ),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 Text(
                   isSuccess ? 'Login Successful' : 'Login Failed',
                   style: Theme.of(context).textTheme.titleLarge,
@@ -131,7 +115,7 @@ class _LoginPageState extends State<LoginPage> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
@@ -192,13 +176,6 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Color _getBorderColor(bool hasError, bool isValid, String value, bool isFocused) {
-    if (hasError) return Theme.of(context).colorScheme.error;
-    if (isFocused) return Theme.of(context).colorScheme.primary;
-    if (isValid && value.isNotEmpty) return Colors.green.shade400;
-    return Theme.of(context).colorScheme.surfaceDim;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -209,7 +186,7 @@ class _LoginPageState extends State<LoginPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Color(0xFF333333)),
+          icon: const Icon(Icons.arrow_back_ios, color: Color(0xFF333333)),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -218,20 +195,20 @@ class _LoginPageState extends State<LoginPage> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24.0),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center, // CHANGED: Center alignment
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                SizedBox(height: 60), // CHANGED: More space at top
+                const SizedBox(height: 60),
 
                 // Welcome Title - CENTERED
                 RichText(
-                  textAlign: TextAlign.center, // ADDED
+                  textAlign: TextAlign.center,
                   text: TextSpan(
                     style: theme.textTheme.displayLarge?.copyWith(
-                      fontSize: 28, // CHANGED: Adjust size to match image
+                      fontSize: 28,
                       fontWeight: FontWeight.w600,
                     ),
                     children: [
-                      TextSpan(
+                      const TextSpan(
                         text: 'Welcome to ',
                         style: TextStyle(color: Colors.black),
                       ),
@@ -243,171 +220,88 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
 
-                SizedBox(height: 12), // CHANGED: Adjusted spacing
+                const SizedBox(height: 12),
 
                 // Subtitle - CENTERED
                 Text(
                   'Please sign in to continue our app',
-                  textAlign: TextAlign.center, // ADDED
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: Colors.grey[600],
                     fontSize: 14,
                   ),
                 ),
 
-                SizedBox(height: 48), // CHANGED: More spacing before form
+                const SizedBox(height: 48),
 
-                // Email Field - Keep left aligned for form
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Email Address',
-                      style: theme.textTheme.labelLarge,
-                    ),
-                    SizedBox(height: 8),
-                    Focus(
-                      onFocusChange: (hasFocus) {
-                        setState(() {});
-                      },
-                      child: Builder(
-                        builder: (context) {
-                          final isFocused = Focus.of(context).hasFocus;
-                          return Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: _getBorderColor(_emailError.isNotEmpty, _isEmailValid, _email, isFocused),
-                                width: 1.5,
-                              ),
-                            ),
-                            child: TextField(
-                              controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
-                              style: theme.textTheme.bodyMedium,
-                              enabled: !_isLoading,
-                              decoration: InputDecoration(
-                                hintText: 'joemama0ng@myComp.com',
-                                hintStyle: theme.textTheme.labelMedium,
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    if (_emailError.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0, left: 4.0),
-                        child: Text(
-                          _emailError,
-                          style: TextStyle(
-                            color: theme.colorScheme.error,
-                            fontSize: 12,
-                            fontFamily: 'Poppins',
-                          ),
-                        ),
-                      ),
-                  ],
+                // Email Field
+                Focus(
+                  focusNode: _emailFocusNode,
+                  child: CustomTextField(
+                    label: 'Email Address',
+                    hint: 'joemama0ng@myComp.com',
+                    controller: _emailController,
+                    isValid: _isEmailValid,
+                    errorText: _emailError,
+                    value: _email,
+                    keyboardType: TextInputType.emailAddress,
+                    enabled: !_isLoading,
+                    isFocused: _emailFocusNode.hasFocus,
+                  ),
                 ),
 
-                SizedBox(height: 24),
+                const SizedBox(height: 24),
 
                 // Password Field
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Password',
-                      style: theme.textTheme.labelLarge,
-                    ),
-                    SizedBox(height: 8),
-                    Focus(
-                      onFocusChange: (hasFocus) {
-                        setState(() {});
-                      },
-                      child: Builder(
-                        builder: (context) {
-                          final isFocused = Focus.of(context).hasFocus;
-                          return Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: _getBorderColor(_passwordError.isNotEmpty, _isPasswordValid, _password, isFocused),
-                                width: 1.5,
-                              ),
-                            ),
-                            child: TextField(
-                              controller: _passwordController,
-                              obscureText: !_isPasswordVisible,
-                              style: theme.textTheme.bodyMedium,
-                              enabled: !_isLoading,
-                              decoration: InputDecoration(
-                                hintText: '••••••••••',
-                                hintStyle: theme.textTheme.labelMedium,
-                                suffixIcon: IconButton(
-                                  icon: Icon(
-                                    _isPasswordVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                                    color: theme.colorScheme.onTertiary,
-                                  ),
-                                  onPressed: _isLoading ? null : () {
-                                    setState(() {
-                                      _isPasswordVisible = !_isPasswordVisible;
-                                    });
-                                  },
-                                ),
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    if (_passwordError.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0, left: 4.0),
-                        child: Text(
-                          _passwordError,
-                          style: TextStyle(
-                            color: theme.colorScheme.error,
-                            fontSize: 12,
-                            fontFamily: 'Poppins',
-                          ),
-                        ),
-                      ),
-                  ],
+                Focus(
+                  focusNode: _passwordFocusNode,
+                  child: CustomTextField(
+                    label: 'Password',
+                    hint: '••••••••••',
+                    controller: _passwordController,
+                    isValid: _isPasswordValid,
+                    errorText: _passwordError,
+                    value: _password,
+                    obscureText: !_isPasswordVisible,
+                    showVisibilityToggle: true,
+                    onVisibilityToggle: () {
+                      setState(() {
+                        _isPasswordVisible = !_isPasswordVisible;
+                      });
+                    },
+                    enabled: !_isLoading,
+                    isFocused: _passwordFocusNode.hasFocus,
+                  ),
                 ),
 
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
 
                 // Forgot Password
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: _isLoading ? null : _navigateToForgotPassword,
-                    child: Text('Forgot Password?'),
+                    child: const Text('Forgot Password?'),
                   ),
                 ),
 
-                SizedBox(height: 24),
+                const SizedBox(height: 24),
 
                 // Sign In Button - Full width
                 SizedBox(
-                  width: double.infinity, // ADDED: Full width button
+                  width: double.infinity,
                   child: FilledButton(
-                    onPressed: (_isLoading || !_isEmailValid || !_isPasswordValid) ? null : _handleLogin,
+                    onPressed: (_isLoading || !_isEmailValid || !_isPasswordValid)
+                        ? null
+                        : _handleLogin,
                     style: FilledButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 16), // ADDED
+                      padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     child: _isLoading
-                        ? SizedBox(
+                        ? const SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
@@ -415,14 +309,14 @@ class _LoginPageState extends State<LoginPage> {
                         valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
-                        : Text(
+                        : const Text(
                       'Sign In',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
 
-                SizedBox(height: 60),
+                const SizedBox(height: 60),
 
                 // Sign Up Section
                 Row(
@@ -436,15 +330,15 @@ class _LoginPageState extends State<LoginPage> {
                       onPressed: _isLoading ? null : _navigateToSignUp,
                       style: TextButton.styleFrom(
                         padding: EdgeInsets.zero,
-                        minimumSize: Size(0, 0),
+                        minimumSize: const Size(0, 0),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: Text('Sign up'),
+                      child: const Text('Sign up'),
                     ),
                   ],
                 ),
 
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
               ],
             ),
           ),

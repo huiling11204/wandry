@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wandry/backend/userAuth.dart'; // Import your auth service
+import 'package:wandry/controller/userAuth.dart'; // Import your auth service
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});

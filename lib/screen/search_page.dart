@@ -1,9 +1,11 @@
-import 'dart:convert';
+// lib/screen/search_page.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../controller/search_controller.dart';
+import '../controller/interaction_tracker.dart';
+import '../utilities/icon_helper.dart';
 import 'place_detail_page.dart';
-import '../backend/interaction_tracker.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -19,10 +21,6 @@ class _SearchPageState extends State<SearchPage> {
   String? _errorMessage;
   Timer? _debounce;
 
-  final String _searchUrl =
-      "https://us-central1-trip-planner-ec182.cloudfunctions.net/searchDestinations";
-
-  // Popular destinations for suggestions
   final List<Map<String, String>> _popularDestinations = [
     {'name': 'Tokyo Tower', 'icon': '🗼'},
     {'name': 'Eiffel Tower Paris', 'icon': '🗼'},
@@ -46,7 +44,6 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
-  // Real-time search with debouncing
   void _onSearchChanged() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
 
@@ -60,7 +57,6 @@ class _SearchPageState extends State<SearchPage> {
       return;
     }
 
-    // Wait 500ms after user stops typing before searching
     _debounce = Timer(const Duration(milliseconds: 500), () {
       _searchDestination(query);
     });
@@ -75,38 +71,28 @@ class _SearchPageState extends State<SearchPage> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse(_searchUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'query': query, 'limit': 15}),
-      ).timeout(const Duration(seconds: 10));
+      final result = await DestinationSearchController.searchDestinations(query);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
+      if (result['success'] == true) {
+        setState(() {
+          _results = result['results'] ?? [];
+        });
+
+        // Track search
+        await InteractionTracker().trackSearch(
+          searchQuery: query,
+          resultsCount: _results.length,
+        );
+
+        if (_results.isEmpty) {
           setState(() {
-            _results = List<Map<String, dynamic>>.from(data['results'] ?? []);
-          });
-
-          // 🆕 ADD THIS: Track search
-          await InteractionTracker().trackSearch(
-            searchQuery: query,
-            resultsCount: _results.length,
-          );
-
-          if (_results.isEmpty) {
-            setState(() {
-              _errorMessage = 'No results found. Try "Tokyo Tower" or "Penang Hill"';
-            });
-          }
-        } else {
-          setState(() {
-            _errorMessage = data['error'] ?? 'Search failed';
+            _errorMessage =
+            'No results found. Try "Tokyo Tower" or "Penang Hill"';
           });
         }
       } else {
         setState(() {
-          _errorMessage = 'Server error. Please try again.';
+          _errorMessage = result['error'] ?? 'Search failed';
         });
       }
     } catch (e) {
@@ -163,7 +149,8 @@ class _SearchPageState extends State<SearchPage> {
                     color: Colors.grey[400],
                     fontSize: 16,
                   ),
-                  prefixIcon: Icon(Icons.search, color: Colors.grey[400], size: 24),
+                  prefixIcon:
+                  Icon(Icons.search, color: Colors.grey[400], size: 24),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
                     icon: Icon(Icons.clear, color: Colors.grey[400]),
@@ -192,7 +179,8 @@ class _SearchPageState extends State<SearchPage> {
             child: _isLoading
                 ? const Center(
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+                valueColor:
+                AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
               ),
             )
                 : _errorMessage != null
@@ -338,7 +326,7 @@ class _SearchPageState extends State<SearchPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: _results.length,
       itemBuilder: (context, index) {
-        final place = _results[index];
+        final place = _results[index] as Map<String, dynamic>;
         return _buildResultCard(place);
       },
     );
@@ -352,14 +340,14 @@ class _SearchPageState extends State<SearchPage> {
     final type = place['type']?.toString() ?? '';
     final category = place['category']?.toString() ?? '';
 
-    // Get icon based on category
     IconData icon = Icons.place;
     Color iconColor = const Color(0xFF4A90E2);
 
     if (category.contains('food') || category.contains('restaurant')) {
       icon = Icons.restaurant;
       iconColor = const Color(0xFFFF8A65);
-    } else if (category.contains('hotel') || category.contains('accommodation')) {
+    } else if (category.contains('hotel') ||
+        category.contains('accommodation')) {
       icon = Icons.hotel;
       iconColor = const Color(0xFF9575CD);
     } else if (category.contains('tourism') || type == 'attraction') {
@@ -390,7 +378,6 @@ class _SearchPageState extends State<SearchPage> {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              // Icon
               Container(
                 width: 56,
                 height: 56,
@@ -401,8 +388,6 @@ class _SearchPageState extends State<SearchPage> {
                 child: Icon(icon, color: iconColor, size: 28),
               ),
               const SizedBox(width: 12),
-
-              // Text info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -421,7 +406,8 @@ class _SearchPageState extends State<SearchPage> {
                     if (city.isNotEmpty || country.isNotEmpty)
                       Row(
                         children: [
-                          Icon(Icons.location_on, size: 14, color: Colors.grey[500]),
+                          Icon(Icons.location_on,
+                              size: 14, color: Colors.grey[500]),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -461,8 +447,6 @@ class _SearchPageState extends State<SearchPage> {
                   ],
                 ),
               ),
-
-              // Arrow
               Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
             ],
           ),

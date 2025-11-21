@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:wandry/backend/userAuth.dart';
-import 'terms_and_conditions_page.dart';  // Import the Terms page
-import 'privacy_policy_page.dart';        // Import the Privacy Policy page
+import '../controller/userAuth.dart';
+import '../utilities/validators.dart';
+import '../widget/custom_text_field.dart';
+import 'terms_and_conditions_page.dart';
+import 'privacy_policy_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -11,7 +13,6 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
-  final _formKey = GlobalKey<FormState>();
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -70,101 +71,40 @@ class _RegisterPageState extends State<RegisterPage> {
   void _validateFirstName() {
     setState(() {
       _firstName = _firstNameController.text.trim();
-      if (_firstName.isEmpty) {
-        _firstNameError = '';
-        _isFirstNameValid = false;
-      } else if (_firstName.length < 2) {
-        _firstNameError = 'First name must be at least 2 characters';
-        _isFirstNameValid = false;
-      } else if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(_firstName)) {
-        _firstNameError = 'First name can only contain letters';
-        _isFirstNameValid = false;
-      } else {
-        _firstNameError = '';
-        _isFirstNameValid = true;
-      }
+      _firstNameError = Validators.validateName(_firstName, fieldName: 'First name') ?? '';
+      _isFirstNameValid = Validators.isNameValid(_firstName);
     });
   }
 
   void _validateLastName() {
     setState(() {
       _lastName = _lastNameController.text.trim();
-      if (_lastName.isEmpty) {
-        _lastNameError = '';
-        _isLastNameValid = false;
-      } else if (_lastName.length < 2) {
-        _lastNameError = 'Last name must be at least 2 characters';
-        _isLastNameValid = false;
-      } else if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(_lastName)) {
-        _lastNameError = 'Last name can only contain letters';
-        _isLastNameValid = false;
-      } else {
-        _lastNameError = '';
-        _isLastNameValid = true;
-      }
+      _lastNameError = Validators.validateName(_lastName, fieldName: 'Last name') ?? '';
+      _isLastNameValid = Validators.isNameValid(_lastName);
     });
   }
 
   void _validateEmail() {
     setState(() {
       _email = _emailController.text.trim();
-      final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
-
-      if (_email.isEmpty) {
-        _emailError = '';
-        _isEmailValid = false;
-      } else if (!emailRegex.hasMatch(_email)) {
-        _emailError = 'Please enter a valid email format';
-        _isEmailValid = false;
-      } else {
-        _emailError = '';
-        _isEmailValid = true;
-      }
+      _emailError = Validators.validateEmail(_email) ?? '';
+      _isEmailValid = Validators.isEmailValid(_email);
     });
   }
 
   void _validateContact() {
     setState(() {
       _contact = _contactController.text.trim();
-      final contactRegex = RegExp(r'^[0-9]{10,15}$');
-
-      if (_contact.isEmpty) {
-        _contactError = '';
-        _isContactValid = false;
-      } else if (!contactRegex.hasMatch(_contact)) {
-        _contactError = 'Please enter a valid contact number (10-15 digits)';
-        _isContactValid = false;
-      } else {
-        _contactError = '';
-        _isContactValid = true;
-      }
+      _contactError = Validators.validateContact(_contact) ?? '';
+      _isContactValid = Validators.isContactValid(_contact);
     });
   }
 
   void _validatePassword() {
     setState(() {
       _password = _passwordController.text;
-
-      if (_password.isEmpty) {
-        _passwordError = '';
-        _isPasswordValid = false;
-        return;
-      }
-
-      bool hasMinLength = _password.length >= 8;
-      bool hasUppercase = RegExp(r'[A-Z]').hasMatch(_password);
-      bool hasLowercase = RegExp(r'[a-z]').hasMatch(_password);
-      bool hasNumber = RegExp(r'[0-9]').hasMatch(_password);
-      bool hasSpecialChar = RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(_password);
-
-      if (hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecialChar) {
-        _passwordError = '';
-        _isPasswordValid = true;
-      } else {
-        _passwordError = 'Password must contain: 8+ characters, uppercase, lowercase, number, and special character';
-        _isPasswordValid = false;
-      }
-
+      _passwordError = Validators.validatePasswordDetailed(_password) ?? '';
+      _isPasswordValid = Validators.isPasswordValid(_password);
       _validateConfirmPassword();
     });
   }
@@ -172,17 +112,8 @@ class _RegisterPageState extends State<RegisterPage> {
   void _validateConfirmPassword() {
     setState(() {
       _confirmPassword = _confirmPasswordController.text;
-
-      if (_confirmPassword.isEmpty) {
-        _confirmPasswordError = '';
-        _isConfirmPasswordValid = false;
-      } else if (_confirmPassword != _password) {
-        _confirmPasswordError = 'Passwords do not match';
-        _isConfirmPasswordValid = false;
-      } else {
-        _confirmPasswordError = '';
-        _isConfirmPasswordValid = true;
-      }
+      _confirmPasswordError = Validators.validateConfirmPassword(_confirmPassword, _password) ?? '';
+      _isConfirmPasswordValid = _confirmPassword.isNotEmpty && _confirmPassword == _password;
     });
   }
 
@@ -196,24 +127,24 @@ class _RegisterPageState extends State<RegisterPage> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Container(
-            padding: EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
                   width: 80,
                   height: 80,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.red,
                   ),
-                  child: Icon(
+                  child: const Icon(
                     Icons.close,
                     color: Colors.white,
                     size: 40,
                   ),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 Text(
                   'Error',
                   style: Theme.of(context).textTheme.titleLarge,
@@ -227,7 +158,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     textAlign: TextAlign.center,
                   ),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
@@ -235,7 +166,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       Navigator.of(context).pop();
                     },
                     style: Theme.of(context).outlinedButtonTheme.style,
-                    child: Text('Try Again'),
+                    child: const Text('Try Again'),
                   ),
                 ),
               ],
@@ -256,7 +187,7 @@ class _RegisterPageState extends State<RegisterPage> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Container(
-            padding: EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -273,7 +204,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     size: 40,
                   ),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 Text(
                   isSuccess ? 'Registration Successful' : 'Registration Failed',
                   style: Theme.of(context).textTheme.titleLarge,
@@ -288,7 +219,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
@@ -363,7 +294,6 @@ class _RegisterPageState extends State<RegisterPage> {
     });
 
     try {
-      // Combine first name and last name for registration
       String fullName = '$_firstName $_lastName'.trim();
 
       await _authService.createUserWithEmailAndPassword(
@@ -374,7 +304,6 @@ class _RegisterPageState extends State<RegisterPage> {
       );
 
       _showRegistrationDialog(true);
-
     } catch (e) {
       _clearForm();
       _showRegistrationDialog(false, e.toString());
@@ -383,85 +312,6 @@ class _RegisterPageState extends State<RegisterPage> {
         _isLoading = false;
       });
     }
-  }
-
-  Widget _buildInputField({
-    required String label,
-    required String hint,
-    required TextEditingController controller,
-    required IconData prefixIcon,
-    required bool isValid,
-    required String errorText,
-    String? value,
-    bool obscureText = false,
-    bool showVisibilityToggle = false,
-    VoidCallback? onVisibilityToggle,
-    TextInputType? keyboardType,
-  }) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.labelMedium,
-        ),
-        SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: errorText.isNotEmpty
-                  ? theme.colorScheme.error
-                  : isValid && value != null && value.isNotEmpty
-                  ? Colors.green.shade400
-                  : theme.colorScheme.primary,
-              width: 1.5,
-            ),
-          ),
-          child: TextFormField(
-            controller: controller,
-            obscureText: obscureText,
-            keyboardType: keyboardType,
-            style: theme.textTheme.bodyMedium,
-            enabled: !_isLoading,
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: theme.textTheme.labelSmall,
-              prefixIcon: Icon(
-                prefixIcon,
-                color: theme.colorScheme.onTertiary,
-              ),
-              suffixIcon: showVisibilityToggle
-                  ? IconButton(
-                icon: Icon(
-                  obscureText ? Icons.visibility_off : Icons.visibility,
-                  color: theme.colorScheme.onTertiary,
-                ),
-                onPressed: _isLoading ? null : onVisibilityToggle,
-              )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            ),
-          ),
-        ),
-        if (errorText.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Text(
-              errorText,
-              style: TextStyle(
-                color: theme.colorScheme.error,
-                fontSize: 12,
-                fontFamily: theme.textTheme.bodySmall?.fontFamily,
-              ),
-            ),
-          ),
-      ],
-    );
   }
 
   @override
@@ -477,7 +327,7 @@ class _RegisterPageState extends State<RegisterPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
 
                 // Title
                 Center(
@@ -487,7 +337,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         'Sign up now',
                         style: theme.textTheme.headlineMedium,
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Text(
                         'Please fill the details and create account',
                         style: theme.textTheme.bodyMedium?.copyWith(
@@ -498,10 +348,10 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                 ),
 
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
 
                 // First Name Field
-                _buildInputField(
+                CustomTextFieldWithIcon(
                   label: 'First name',
                   hint: 'Enter your first name',
                   controller: _firstNameController,
@@ -509,12 +359,13 @@ class _RegisterPageState extends State<RegisterPage> {
                   isValid: _isFirstNameValid,
                   errorText: _firstNameError,
                   value: _firstName,
+                  enabled: !_isLoading,
                 ),
 
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
 
                 // Last Name Field
-                _buildInputField(
+                CustomTextFieldWithIcon(
                   label: 'Last name',
                   hint: 'Enter your last name',
                   controller: _lastNameController,
@@ -522,12 +373,13 @@ class _RegisterPageState extends State<RegisterPage> {
                   isValid: _isLastNameValid,
                   errorText: _lastNameError,
                   value: _lastName,
+                  enabled: !_isLoading,
                 ),
 
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
 
                 // Email Field
-                _buildInputField(
+                CustomTextFieldWithIcon(
                   label: 'Email',
                   hint: 'Enter your email',
                   controller: _emailController,
@@ -536,12 +388,13 @@ class _RegisterPageState extends State<RegisterPage> {
                   errorText: _emailError,
                   value: _email,
                   keyboardType: TextInputType.emailAddress,
+                  enabled: !_isLoading,
                 ),
 
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
 
                 // Contact Number Field
-                _buildInputField(
+                CustomTextFieldWithIcon(
                   label: 'Contact number',
                   hint: 'Enter your contact number',
                   controller: _contactController,
@@ -550,12 +403,13 @@ class _RegisterPageState extends State<RegisterPage> {
                   errorText: _contactError,
                   value: _contact,
                   keyboardType: TextInputType.phone,
+                  enabled: !_isLoading,
                 ),
 
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
 
                 // Password Field
-                _buildInputField(
+                CustomTextFieldWithIcon(
                   label: 'Password',
                   hint: 'Enter your password',
                   controller: _passwordController,
@@ -570,12 +424,13 @@ class _RegisterPageState extends State<RegisterPage> {
                       _isPasswordVisible = !_isPasswordVisible;
                     });
                   },
+                  enabled: !_isLoading,
                 ),
 
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
 
                 // Confirm Password Field
-                _buildInputField(
+                CustomTextFieldWithIcon(
                   label: 'Confirm password',
                   hint: 'Enter confirm password',
                   controller: _confirmPasswordController,
@@ -590,9 +445,10 @@ class _RegisterPageState extends State<RegisterPage> {
                       _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
                     });
                   },
+                  enabled: !_isLoading,
                 ),
 
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
 
                 // Terms and Conditions Checkbox
                 Row(
@@ -603,7 +459,9 @@ class _RegisterPageState extends State<RegisterPage> {
                       height: 24,
                       child: Checkbox(
                         value: _agreedToTerms,
-                        onChanged: _isLoading ? null : (bool? value) {
+                        onChanged: _isLoading
+                            ? null
+                            : (bool? value) {
                           setState(() {
                             _agreedToTerms = value ?? false;
                           });
@@ -614,7 +472,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         ),
                       ),
                     ),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: RichText(
                         text: TextSpan(
@@ -622,15 +480,17 @@ class _RegisterPageState extends State<RegisterPage> {
                             color: Colors.black,
                           ),
                           children: [
-                            TextSpan(text: 'I agree to the '),
+                            const TextSpan(text: 'I agree to the '),
                             WidgetSpan(
                               child: GestureDetector(
-                                onTap: _isLoading ? null : () {
-                                  // Navigate to Terms & Conditions page
+                                onTap: _isLoading
+                                    ? null
+                                    : () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => TermsAndConditionsPage(),
+                                      builder: (context) =>
+                                          TermsAndConditionsPage(),
                                     ),
                                   );
                                 },
@@ -644,11 +504,12 @@ class _RegisterPageState extends State<RegisterPage> {
                                 ),
                               ),
                             ),
-                            TextSpan(text: ' & '),
+                            const TextSpan(text: ' & '),
                             WidgetSpan(
                               child: GestureDetector(
-                                onTap: _isLoading ? null : () {
-                                  // Navigate to Privacy Policy page
+                                onTap: _isLoading
+                                    ? null
+                                    : () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -666,7 +527,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                 ),
                               ),
                             ),
-                            TextSpan(text: ' set out by this site'),
+                            const TextSpan(text: ' set out by this site'),
                           ],
                         ),
                       ),
@@ -674,13 +535,18 @@ class _RegisterPageState extends State<RegisterPage> {
                   ],
                 ),
 
-                SizedBox(height: 30),
+                const SizedBox(height: 30),
 
                 // Sign Up Button
                 OutlinedButton(
-                  onPressed: (_isLoading || !_isFirstNameValid || !_isLastNameValid ||
-                      !_isEmailValid || !_isContactValid || !_isPasswordValid ||
-                      !_isConfirmPasswordValid || !_agreedToTerms)
+                  onPressed: (_isLoading ||
+                      !_isFirstNameValid ||
+                      !_isLastNameValid ||
+                      !_isEmailValid ||
+                      !_isContactValid ||
+                      !_isPasswordValid ||
+                      !_isConfirmPasswordValid ||
+                      !_agreedToTerms)
                       ? null
                       : _handleRegister,
                   style: theme.outlinedButtonTheme.style,
@@ -695,10 +561,10 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                     ),
                   )
-                      : Text('Sign Up'),
+                      : const Text('Sign Up'),
                 ),
 
-                SizedBox(height: 30),
+                const SizedBox(height: 30),
 
                 // Already have account
                 Column(
@@ -707,27 +573,33 @@ class _RegisterPageState extends State<RegisterPage> {
                       'Already have an account?',
                       style: theme.textTheme.bodyMedium,
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     GestureDetector(
-                      onTap: _isLoading ? null : () {
+                      onTap: _isLoading
+                          ? null
+                          : () {
                         Navigator.pop(context);
                       },
                       child: Text(
                         'Sign in',
                         style: TextStyle(
-                          color: _isLoading ? theme.colorScheme.outline : theme.colorScheme.primary,
+                          color: _isLoading
+                              ? theme.colorScheme.outline
+                              : theme.colorScheme.primary,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           fontFamily: theme.textTheme.bodyMedium?.fontFamily,
                           decoration: TextDecoration.underline,
-                          decorationColor: _isLoading ? theme.colorScheme.outline : theme.colorScheme.primary,
+                          decorationColor: _isLoading
+                              ? theme.colorScheme.outline
+                              : theme.colorScheme.primary,
                         ),
                       ),
                     ),
                   ],
                 ),
 
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
               ],
             ),
           ),

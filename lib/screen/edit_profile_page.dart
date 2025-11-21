@@ -1,9 +1,11 @@
 // ============================================
-// EDIT PROFILE PAGE (FIXED - Matches Firebase Structure)
+// EDIT PROFILE PAGE (REFACTORED - UI Only)
+// Location: lib/screen/edit_profile_page.dart
 // ============================================
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:wandry/controller/profile_controller.dart';
+import 'package:wandry/utilities/validators.dart';
+import 'package:wandry/widget/profile_field_widget.dart';
 
 class EditProfilePage extends StatefulWidget {
   final Map<String, dynamic> profileData;
@@ -16,20 +18,18 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
+  final ProfileController _profileController = ProfileController();
+
   late TextEditingController _firstNameController;
   late TextEditingController _lastNameController;
   late TextEditingController _emailController;
   late TextEditingController _contactController;
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  User? currentUser;
   bool isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    currentUser = _auth.currentUser;
 
     // Initialize controllers with existing data
     _firstNameController = TextEditingController(
@@ -39,7 +39,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       text: widget.profileData['lastName'] ?? '',
     );
     _emailController = TextEditingController(
-      text: widget.profileData['email'] ?? currentUser?.email ?? '',
+      text: widget.profileData['email'] ?? _profileController.currentUser?.email ?? '',
     );
     _contactController = TextEditingController(
       text: widget.profileData['phoneNumber'] ?? '',
@@ -56,102 +56,56 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   // ---------------------------------------------------
-  // SAVE CHANGES (Fixed to update correct collections)
+  // SAVE CHANGES (Calls Controller)
   // ---------------------------------------------------
   Future<void> _saveChanges() async {
     if (!_formKey.currentState!.validate()) return;
-    if (currentUser == null) return;
+    if (_profileController.currentUser == null) return;
 
     setState(() => isSaving = true);
 
     try {
-      print('💾 Starting profile update...');
-
-      String firstName = _firstNameController.text.trim();
-      String lastName = _lastNameController.text.trim();
-      String email = _emailController.text.trim();
-      String phoneNumber = _contactController.text.trim();
-
-      // Step 1: Update customerProfile collection
-      print('📝 Updating customer profile...');
-      QuerySnapshot profileQuery = await _firestore
-          .collection('customerProfile')
-          .where('firebaseUid', isEqualTo: currentUser!.uid)
-          .limit(1)
-          .get();
-
-      if (profileQuery.docs.isEmpty) {
-        throw 'Customer profile not found';
-      }
-
-      await profileQuery.docs.first.reference.update({
-        'firstName': firstName,
-        'lastName': lastName,
-        'phoneNumber': phoneNumber,
-      });
-      print('✅ Customer profile updated');
-
-      // Step 2: Update email in user collection if changed
-      if (email != widget.profileData['email']) {
-        print('📧 Updating email in user collection...');
-        QuerySnapshot userQuery = await _firestore
-            .collection('user')
-            .where('firebaseUid', isEqualTo: currentUser!.uid)
-            .limit(1)
-            .get();
-
-        if (userQuery.docs.isNotEmpty) {
-          await userQuery.docs.first.reference.update({
-            'email': email,
-          });
-          print('✅ Email updated in user collection');
-        }
-
-        // Update Firebase Auth email (requires re-authentication for security)
-        try {
-          await currentUser!.verifyBeforeUpdateEmail(email);
-          print('✅ Verification email sent to new address');
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Verification email sent to $email. Please verify to complete the change.'),
-                duration: Duration(seconds: 5),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-        } catch (e) {
-          print('⚠️ Email update requires re-authentication: $e');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Email change requires re-login. Profile updated, but please sign in again to change email.'),
-                duration: Duration(seconds: 5),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-        }
-      }
-
-      // Step 3: Update Firebase Auth display name
-      String fullName = '$firstName $lastName'.trim();
-      await currentUser!.updateDisplayName(fullName);
-      print('✅ Display name updated to: $fullName');
-
-      print('🎉 Profile update complete!');
+      final result = await _profileController.updateProfile(
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        email: _emailController.text.trim(),
+        phoneNumber: _contactController.text.trim(),
+        originalEmail: widget.profileData['email'],
+      );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Profile updated successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        // Show appropriate message based on email update status
+        if (result['emailMessage'] == 'verification_sent') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Verification email sent to ${result['newEmail']}. Please verify to complete the change.',
+              ),
+              duration: Duration(seconds: 5),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else if (result['emailMessage'] == 'requires_reauth') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Email change requires re-login. Profile updated, but please sign in again to change email.',
+              ),
+              duration: Duration(seconds: 5),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Profile updated successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+
         Navigator.pop(context, true); // Return true to indicate success
       }
-
     } catch (e) {
       print('❌ Error updating profile: $e');
       if (mounted) {
@@ -192,18 +146,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               EditProfileField(
                 label: 'First Name',
                 controller: _firstNameController,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your first name';
-                  }
-                  if (value.trim().length < 2) {
-                    return 'First name must be at least 2 characters';
-                  }
-                  if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(value.trim())) {
-                    return 'First name can only contain letters';
-                  }
-                  return null;
-                },
+                validator: Validators.validateFirstName,
               ),
               SizedBox(height: 16),
 
@@ -211,18 +154,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               EditProfileField(
                 label: 'Last Name',
                 controller: _lastNameController,
-                validator: (value) {
-                  // Last name is optional, but if provided, validate it
-                  if (value != null && value.trim().isNotEmpty) {
-                    if (value.trim().length < 2) {
-                      return 'Last name must be at least 2 characters';
-                    }
-                    if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(value.trim())) {
-                      return 'Last name can only contain letters';
-                    }
-                  }
-                  return null;
-                },
+                validator: Validators.validateLastName,
               ),
               SizedBox(height: 16),
 
@@ -231,16 +163,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 label: 'Email Address',
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  // Email validation regex
-                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim())) {
-                    return 'Please enter a valid email address';
-                  }
-                  return null;
-                },
+                validator: Validators.validateEmailRequired,
               ),
               SizedBox(height: 16),
 
@@ -249,26 +172,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 label: 'Contact Number',
                 controller: _contactController,
                 keyboardType: TextInputType.phone,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your contact number';
-                  }
-                  // Remove spaces and dashes for validation
-                  String cleanNumber = value.trim().replaceAll(RegExp(r'[\s-]'), '');
-
-                  // Check if it contains only digits (and optional + at start)
-                  if (!RegExp(r'^\+?\d+$').hasMatch(cleanNumber)) {
-                    return 'Contact number can only contain digits';
-                  }
-
-                  // Check length (8-15 digits is reasonable for most countries)
-                  int digitCount = cleanNumber.replaceAll('+', '').length;
-                  if (digitCount < 8 || digitCount > 15) {
-                    return 'Contact number must be 8-15 digits';
-                  }
-
-                  return null;
-                },
+                validator: Validators.validatePhoneNumber,
               ),
               SizedBox(height: 40),
 
@@ -291,7 +195,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     width: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      valueColor:
+                      AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   )
                       : Text('Save Changes', style: TextStyle(fontSize: 16)),
@@ -301,71 +206,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ---------------------------------------------------
-// REUSABLE EDIT PROFILE FIELD WIDGET
-// ---------------------------------------------------
-class EditProfileField extends StatelessWidget {
-  final String label;
-  final TextEditingController controller;
-  final String? Function(String?)? validator;
-  final TextInputType? keyboardType;
-
-  const EditProfileField({super.key, 
-    required this.label,
-    required this.controller,
-    this.validator,
-    this.keyboardType,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        SizedBox(height: 8),
-        TextFormField(
-          controller: controller,
-          validator: validator,
-          keyboardType: keyboardType,
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Color(0xFF2196F3), width: 2),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.red),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.red, width: 2),
-            ),
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          ),
-        ),
-      ],
     );
   }
 }

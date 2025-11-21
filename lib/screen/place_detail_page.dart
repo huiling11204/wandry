@@ -1,11 +1,19 @@
+// lib/screen/place_detail_page.dart
+
 import 'dart:convert';
-import 'dart:math' show sin, cos, sqrt, asin;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../backend/interaction_tracker.dart';
+import '../controller/wikipedia_controller.dart';
+import '../controller/overpass_controller.dart';
+import '../controller/trip_controller.dart';
+import '../controller/interaction_tracker.dart';
+import '../utilities/string_helper.dart';
+import '../utilities/icon_helper.dart';
+import '../utilities/distance_calculator.dart';
+import '../widget/detail_row.dart';
+import '../widget/category_icon.dart';
 
 class PlaceDetailPage extends StatefulWidget {
   final Map<String, dynamic> place;
@@ -21,13 +29,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   Map<String, dynamic>? _details;
   String? _imageUrl;
   String? _wikipediaDescription;
-
-  // Multiple Overpass API servers for fallback
-  final List<String> _overpassServers = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.openstreetmap.ru/api/interpreter',
-  ];
 
   @override
   void initState() {
@@ -65,224 +66,27 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     });
   }
 
-  String _extractEnglishPlaceName() {
-    String placeName = '';
-
-    final tags = widget.place['tags'] as Map<String, dynamic>?;
-    if (tags != null) {
-      placeName = tags['name:en']?.toString() ??
-          tags['int_name']?.toString() ??
-          tags['official_name:en']?.toString() ??
-          tags['alt_name:en']?.toString() ?? '';
-    }
-
-    if (placeName.isEmpty) {
-      String fullName = widget.place['name']?.toString() ??
-          widget.place['display_name']?.toString() ?? '';
-
-      if (fullName.isNotEmpty) {
-        List<String> parts = fullName.split(',').map((e) => e.trim()).toList();
-
-        for (var part in parts) {
-          if (_containsLatinCharacters(part) && part.length > 2) {
-            placeName = part;
-            break;
-          }
-        }
-
-        if (placeName.isEmpty) {
-          placeName = parts[0];
-        }
-      }
-    }
-
-    print('📝 Extracted place name: "$placeName"');
-    return placeName;
-  }
-
-  String _getEnglishCountryName() {
-    final address = widget.place['address'] as Map<String, dynamic>?;
-    if (address == null) return '';
-
-    String country = address['country']?.toString() ?? '';
-    String countryCode = address['country_code']?.toString().toUpperCase() ?? '';
-
-    Map<String, String> countryMap = {
-      'JP': 'Japan',
-      'CN': 'China',
-      'KR': 'South Korea',
-      'TH': 'Thailand',
-      'MY': 'Malaysia',
-      'SG': 'Singapore',
-      'ID': 'Indonesia',
-      'VN': 'Vietnam',
-      'PH': 'Philippines',
-      'IN': 'India',
-      'FR': 'France',
-      'DE': 'Germany',
-      'IT': 'Italy',
-      'ES': 'Spain',
-      'GB': 'United Kingdom',
-      'US': 'United States',
-    };
-
-    if (countryCode.isNotEmpty && countryMap.containsKey(countryCode)) {
-      return countryMap[countryCode]!;
-    }
-
-    return country;
-  }
-
-  bool _containsLatinCharacters(String text) {
-    return RegExp(r'[a-zA-Z]').hasMatch(text);
-  }
-
   Future<void> _fetchWikipediaData() async {
-    String placeName = _extractEnglishPlaceName();
+    String placeName = StringHelper.extractEnglishPlaceName(widget.place);
+    String country = StringHelper.getEnglishCountryName(
+      widget.place['address'] as Map<String, dynamic>?,
+    );
 
-    if (placeName.isEmpty || !_containsLatinCharacters(placeName)) {
-      print('⚠️ No valid English place name found');
-      _setFallbackImage(placeName);
-      return;
-    }
+    final wikiData = await WikipediaController.fetchWikipediaData(
+      placeName,
+      country,
+    );
 
-    print('🔍 Fetching Wikipedia data for: $placeName');
-
-    try {
-      final wikiUrl = Uri.parse(
-          'https://en.wikipedia.org/w/api.php?'
-              'action=query&'
-              'format=json&'
-              'prop=pageimages|extracts&'
-              'pithumbsize=800&'
-              'exintro=1&'
-              'explaintext=1&'
-              'redirects=1&'
-              'titles=${Uri.encodeComponent(placeName)}');
-
-      final response =
-      await http.get(wikiUrl).timeout(const Duration(seconds: 8));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final pages = data['query']?['pages'] as Map<String, dynamic>?;
-
-        if (pages != null && pages.isNotEmpty) {
-          final firstPage = pages.values.first;
-
-          if (firstPage['missing'] != true) {
-            final thumbnail = firstPage['thumbnail']?['source'];
-            if (thumbnail != null) {
-              print('✅ Found Wikipedia image');
-              setState(() {
-                _imageUrl = thumbnail;
-              });
-            } else {
-              print('⚠️ No thumbnail, trying alternative');
-              await _tryAlternativeImageSearch(placeName);
-            }
-
-            final extract = firstPage['extract'];
-            if (extract != null && extract.toString().isNotEmpty) {
-              String fullText = extract.toString();
-              List<String> sentences = fullText.split('. ');
-              String shortDesc = sentences.take(3).join('. ');
-              if (!shortDesc.endsWith('.')) shortDesc += '.';
-
-              print('✅ Found Wikipedia description');
-              setState(() {
-                _wikipediaDescription = shortDesc;
-              });
-            }
-          } else {
-            print('❌ Wikipedia page not found');
-            await _tryAlternativeImageSearch(placeName);
-          }
-        }
-      }
-    } catch (e) {
-      print('❌ Wikipedia fetch error: $e');
-    }
+    setState(() {
+      _imageUrl = wikiData['imageUrl'];
+      _wikipediaDescription = wikiData['description'];
+    });
 
     if (_imageUrl == null) {
-      _setFallbackImage(placeName);
+      setState(() {
+        _imageUrl = WikipediaController.getFallbackImageUrl(placeName);
+      });
     }
-  }
-
-  Future<void> _tryAlternativeImageSearch(String placeName) async {
-    String country = _getEnglishCountryName();
-
-    if (country.isEmpty || !_containsLatinCharacters(country)) {
-      return;
-    }
-
-    String searchTerm = '$placeName $country';
-    print('🔍 Trying alternative search: $searchTerm');
-
-    try {
-      final wikiUrl = Uri.parse(
-          'https://en.wikipedia.org/w/api.php?'
-              'action=query&'
-              'format=json&'
-              'prop=pageimages&'
-              'pithumbsize=800&'
-              'redirects=1&'
-              'titles=${Uri.encodeComponent(searchTerm)}');
-
-      final response =
-      await http.get(wikiUrl).timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final pages = data['query']?['pages'] as Map<String, dynamic>?;
-
-        if (pages != null && pages.isNotEmpty) {
-          final firstPage = pages.values.first;
-          final thumbnail = firstPage['thumbnail']?['source'];
-
-          if (thumbnail != null && firstPage['missing'] != true) {
-            print('✅ Found image via alternative search');
-            setState(() {
-              _imageUrl = thumbnail;
-            });
-          }
-        }
-      }
-    } catch (e) {
-      print('❌ Alternative search failed: $e');
-    }
-  }
-
-  void _setFallbackImage(String placeName) {
-    final random = placeName.hashCode.abs() % 1000;
-    setState(() {
-      _imageUrl = 'https://picsum.photos/seed/$random/800/600';
-    });
-    print('📸 Using fallback image');
-  }
-
-  String _getSmartFallbackDescription() {
-    final tags = widget.place['tags'] as Map<String, dynamic>?;
-    if (tags == null) return 'Discover this amazing destination.';
-
-    String tourism = tags['tourism']?.toString() ?? '';
-    String amenity = tags['amenity']?.toString() ?? '';
-
-    if (tourism == 'hotel' || amenity == 'hotel') {
-      return 'A comfortable accommodation option offering quality service and amenities for travelers.';
-    } else if (tourism == 'attraction' || tourism == 'viewpoint') {
-      return 'A popular destination known for its unique features and visitor experiences.';
-    } else if (amenity == 'restaurant' || amenity == 'cafe') {
-      return 'A dining establishment serving food and beverages to guests.';
-    } else if (tourism == 'museum') {
-      return 'A cultural institution preserving and exhibiting artifacts and history.';
-    } else if (amenity == 'bar' || amenity == 'pub') {
-      return 'An establishment serving drinks and providing social atmosphere.';
-    } else if (tags['shop'] != null) {
-      return 'A retail establishment offering products and services.';
-    }
-
-    return 'Discover this amazing destination worth visiting.';
   }
 
   Future<void> _fetchDetails() async {
@@ -291,12 +95,14 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
 
     if (osmType == null || osmId == null) {
       print('⚠️ No OSM data, using fallback');
+      final tags = widget.place['tags'] as Map<String, dynamic>?;
       setState(() {
         _details = {
-          'name': _extractEnglishPlaceName() != ''
-              ? _extractEnglishPlaceName()
+          'name': StringHelper.extractEnglishPlaceName(widget.place).isNotEmpty
+              ? StringHelper.extractEnglishPlaceName(widget.place)
               : 'Unknown',
-          'description': _wikipediaDescription ?? _getSmartFallbackDescription(),
+          'description': _wikipediaDescription ??
+              StringHelper.getSmartFallbackDescription(tags),
           'openingHours': 'Not available',
           'phone': 'Not available',
           'website': '',
@@ -342,7 +148,9 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                 details['description'] = _wikipediaDescription;
                 print('✅ Using Wikipedia description');
               } else {
-                details['description'] = _getSmartFallbackDescription();
+                final tags = widget.place['tags'] as Map<String, dynamic>?;
+                details['description'] =
+                    StringHelper.getSmartFallbackDescription(tags);
                 print('ℹ️ Using smart fallback description');
               }
             }
@@ -355,31 +163,20 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
       }
     } catch (e) {
       print('❌ OSM fetch error: $e');
+      final tags = widget.place['tags'] as Map<String, dynamic>?;
       setState(() {
         _details = {
-          'name': _extractEnglishPlaceName() != ''
-              ? _extractEnglishPlaceName()
+          'name': StringHelper.extractEnglishPlaceName(widget.place).isNotEmpty
+              ? StringHelper.extractEnglishPlaceName(widget.place)
               : 'Unknown',
-          'description': _wikipediaDescription ?? _getSmartFallbackDescription(),
+          'description': _wikipediaDescription ??
+              StringHelper.getSmartFallbackDescription(tags),
           'openingHours': 'Not available',
           'phone': 'Not available',
           'website': '',
         };
       });
     }
-  }
-
-  String _formatOpeningHours(String hours) {
-    if (hours == 'Not available' || hours.isEmpty) return hours;
-
-    return hours
-        .replaceAll('Mo', 'Mon')
-        .replaceAll('Tu', 'Tue')
-        .replaceAll('We', 'Wed')
-        .replaceAll('Th', 'Thu')
-        .replaceAll('Fr', 'Fri')
-        .replaceAll('Sa', 'Sat')
-        .replaceAll('Su', 'Sun');
   }
 
   Future<void> _launchURL(String url) async {
@@ -403,7 +200,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     }
   }
 
-  // IMPROVED: Search with retry logic and multiple servers
   Future<void> _searchNearbyCategory(String category) async {
     final lat = widget.place['latitude'];
     final lon = widget.place['longitude'];
@@ -431,106 +227,81 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     print('🔍 Searching for $category near location...');
     print('📍 Coordinates: $lat, $lon');
 
-    // Try multiple servers
-    for (int serverIndex = 0; serverIndex < _overpassServers.length; serverIndex++) {
-      try {
-        String server = _overpassServers[serverIndex];
-        String overpassQuery = _buildOverpassQuery(category, lat, lon);
+    try {
+      final results = await OverpassController.fetchNearbyCategory(
+        category,
+        lat,
+        lon,
+      );
 
-        print('🌐 Trying server ${serverIndex + 1}/${_overpassServers.length}: $server');
-
-        final response = await http.post(
-          Uri.parse(server),
-          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-          body: overpassQuery,
-        ).timeout(const Duration(seconds: 30));
-
-        print('📡 Response status: ${response.statusCode}');
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          final elements = data['elements'] as List?;
-
-          print('📊 Found ${elements?.length ?? 0} results');
-
-          if (elements == null || elements.isEmpty) {
-            if (serverIndex == _overpassServers.length - 1) {
-              // Last server, no results
-              if (mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('No $category found within 2km. Try a different category.'),
-                    duration: const Duration(seconds: 3),
-                  ),
-                );
-              }
-              return;
-            }
-            // Try next server
-            continue;
-          }
-
-          // Process results
-          List<Map<String, dynamic>> places = [];
-          for (var element in elements) {
-            double eleLat = element['lat'] ?? element['center']?['lat'] ?? 0.0;
-            double eleLon = element['lon'] ?? element['center']?['lon'] ?? 0.0;
-
-            if (eleLat == 0.0 || eleLon == 0.0) continue;
-
-            double distance = _calculateDistance(lat, lon, eleLat, eleLon);
-            String placeName = _getEnglishNameFromTags(element['tags']);
-
-            places.add({
-              'name': placeName,
-              'latitude': eleLat,
-              'longitude': eleLon,
-              'osmType': element['type'],
-              'osmId': element['id'],
-              'tags': element['tags'] ?? {},
-              'address': _parseAddress(element['tags']),
-              'distance': distance,
-            });
-          }
-
-          places.sort((a, b) =>
-              (a['distance'] as double).compareTo(b['distance'] as double));
-          places = places.take(20).toList();
-
-          print('✅ Processed ${places.length} valid places');
-
-          if (mounted) {
-            Navigator.pop(context);
-            _showNearbyResults(category, places);
-          }
-          return; // Success!
-        } else if (response.statusCode == 429 || response.statusCode == 504) {
-          print('⚠️ Server $server is busy (${response.statusCode}), trying next...');
-          continue; // Try next server
-        } else {
-          throw Exception('HTTP ${response.statusCode}');
+      if (results.isEmpty) {
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'No $category found within 2km. Try a different category.'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
         }
-      } catch (e) {
-        print('❌ Error with server ${serverIndex + 1}: $e');
-        if (serverIndex == _overpassServers.length - 1) {
-          // Last server failed
-          if (mounted) {
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Search temporarily unavailable. Please try again in a moment.'),
-                duration: const Duration(seconds: 4),
-                action: SnackBarAction(
-                  label: 'Retry',
-                  onPressed: () => _searchNearbyCategory(category),
-                ),
-              ),
-            );
-          }
-        }
-        // Try next server
-        continue;
+        return;
+      }
+
+      // Process results with distances
+      List<Map<String, dynamic>> places = [];
+      for (var element in results) {
+        double eleLat = element['lat'] ?? element['latitude'] ?? 0.0;
+        double eleLon = element['lon'] ?? element['longitude'] ?? 0.0;
+
+        if (eleLat == 0.0 || eleLon == 0.0) continue;
+
+        double distance = DistanceCalculator.calculateDistance(
+          lat,
+          lon,
+          eleLat,
+          eleLon,
+        );
+
+        String placeName = _getEnglishNameFromTags(element['tags']);
+
+        places.add({
+          'name': placeName,
+          'latitude': eleLat,
+          'longitude': eleLon,
+          'osmType': element['osmType'] ?? element['type'],
+          'osmId': element['osmId'] ?? element['id'],
+          'tags': element['tags'] ?? {},
+          'address': _parseAddress(element['tags']),
+          'distance': distance,
+        });
+      }
+
+      places.sort((a, b) =>
+          (a['distance'] as double).compareTo(b['distance'] as double));
+      places = places.take(20).toList();
+
+      print('✅ Processed ${places.length} valid places');
+
+      if (mounted) {
+        Navigator.pop(context);
+        _showNearbyResults(category, places);
+      }
+    } catch (e) {
+      print('❌ Error searching: $e');
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                'Search temporarily unavailable. Please try again in a moment.'),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _searchNearbyCategory(category),
+            ),
+          ),
+        );
       }
     }
   }
@@ -544,69 +315,38 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         tags['name']?.toString() ??
         'Unknown';
 
-    if (!_containsLatinCharacters(name)) {
+    if (!StringHelper.containsLatinCharacters(name)) {
       if (tags['brand:en'] != null) {
         return tags['brand:en'].toString();
       }
-      if (tags['brand'] != null && _containsLatinCharacters(tags['brand'].toString())) {
+      if (tags['brand'] != null &&
+          StringHelper.containsLatinCharacters(tags['brand'].toString())) {
         return tags['brand'].toString();
       }
-      if (tags['operator'] != null && _containsLatinCharacters(tags['operator'].toString())) {
+      if (tags['operator'] != null &&
+          StringHelper.containsLatinCharacters(tags['operator'].toString())) {
         return tags['operator'].toString();
       }
-      if (tags['addr:street'] != null && _containsLatinCharacters(tags['addr:street'].toString())) {
+      if (tags['addr:street'] != null &&
+          StringHelper.containsLatinCharacters(
+              tags['addr:street'].toString())) {
         String type = tags['amenity'] ?? tags['tourism'] ?? 'Place';
-        return '${type.toString().capitalize()} on ${tags['addr:street']}';
+        return '${_capitalize(type.toString())} on ${tags['addr:street']}';
       }
 
       String type = tags['amenity']?.toString() ??
           tags['tourism']?.toString() ??
           tags['shop']?.toString() ??
           'Place';
-      return type.capitalize();
+      return _capitalize(type);
     }
 
     return name;
   }
 
-  String _buildOverpassQuery(String category, double lat, double lon) {
-    String nodeQuery = '';
-    String wayQuery = '';
-
-    switch (category.toLowerCase()) {
-      case 'food':
-        nodeQuery = 'node(around:2000,$lat,$lon)[amenity~"restaurant|cafe|fast_food|bar"];';
-        wayQuery = 'way(around:2000,$lat,$lon)[amenity~"restaurant|cafe|fast_food|bar"];';
-        break;
-      case 'hotel':
-        nodeQuery = 'node(around:2000,$lat,$lon)[tourism~"hotel|hostel|guest_house"];';
-        wayQuery = 'way(around:2000,$lat,$lon)[tourism~"hotel|hostel|guest_house"];';
-        break;
-      case 'activity':
-        nodeQuery = 'node(around:2000,$lat,$lon)[tourism~"attraction|museum|zoo|theme_park"];';
-        wayQuery = 'way(around:2000,$lat,$lon)[tourism~"attraction|museum|zoo|theme_park"];';
-        break;
-      case 'photo spots':
-        nodeQuery = 'node(around:2000,$lat,$lon)[tourism~"viewpoint|attraction"];';
-        wayQuery = 'way(around:2000,$lat,$lon)[tourism~"viewpoint|attraction"];';
-        break;
-      case 'shopping':
-        nodeQuery = 'node(around:2000,$lat,$lon)[shop];';
-        wayQuery = 'way(around:2000,$lat,$lon)[shop];';
-        break;
-      default:
-        nodeQuery = 'node(around:2000,$lat,$lon)[tourism];';
-        wayQuery = 'way(around:2000,$lat,$lon)[tourism];';
-    }
-
-    return '''
-[out:json][timeout:25];
-(
-  $nodeQuery
-  $wayQuery
-);
-out center;
-''';
+  String _capitalize(String text) {
+    if (text.isEmpty) return text;
+    return "${text[0].toUpperCase()}${text.substring(1)}";
   }
 
   Map<String, dynamic> _parseAddress(Map<String, dynamic>? tags) {
@@ -618,25 +358,6 @@ out center;
       'country': tags['addr:country'] ?? tags['country'] ?? '',
       'road': tags['addr:street'] ?? '',
     };
-  }
-
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadius = 6371000;
-
-    double dLat = _toRadians(lat2 - lat1);
-    double dLon = _toRadians(lon2 - lon1);
-
-    double a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_toRadians(lat1)) * cos(_toRadians(lat2)) *
-            sin(dLon / 2) * sin(dLon / 2);
-
-    double c = 2 * asin(sqrt(a));
-
-    return earthRadius * c;
-  }
-
-  double _toRadians(double degrees) {
-    return degrees * 3.141592653589793 / 180.0;
   }
 
   void _showNearbyResults(String category, List<dynamic> places) {
@@ -669,7 +390,7 @@ out center;
                   child: Row(
                     children: [
                       Icon(
-                        _getCategoryIcon(category),
+                        IconHelper.getCategoryIcon(category),
                         color: const Color(0xFF4A90E2),
                         size: 24,
                       ),
@@ -731,13 +452,14 @@ out center;
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Icon(
-                              _getCategoryIcon(category),
+                              IconHelper.getCategoryIcon(category),
                               color: const Color(0xFF4A90E2),
                               size: 28,
                             ),
                           ),
                           title: Text(
-                            place['name']?.toString().split(',')[0] ?? 'Unknown',
+                            place['name']?.toString().split(',')[0] ??
+                                'Unknown',
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 16,
@@ -797,23 +519,6 @@ out center;
     );
   }
 
-  IconData _getCategoryIcon(String category) {
-    switch (category.toLowerCase()) {
-      case 'food':
-        return Icons.restaurant;
-      case 'hotel':
-        return Icons.hotel;
-      case 'activity':
-        return Icons.local_activity;
-      case 'photo spots':
-        return Icons.camera_alt;
-      case 'shopping':
-        return Icons.shopping_bag;
-      default:
-        return Icons.tour;
-    }
-  }
-
   Future<void> _addToTrip() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -824,17 +529,7 @@ out center;
     }
 
     try {
-      final tripsSnapshot = await FirebaseFirestore.instance
-          .collection('trip')
-          .where('userID', isEqualTo: user.uid)
-          .get();
-
-      if (tripsSnapshot.docs.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Create a trip first!')),
-        );
-        return;
-      }
+      final trips = await TripController.getUserTrips();
 
       if (!mounted) return;
 
@@ -858,8 +553,8 @@ out center;
                   ),
                 ),
                 const SizedBox(height: 16),
-                ...tripsSnapshot.docs.map((tripDoc) {
-                  final tripData = tripDoc.data();
+                ...trips.map((tripDoc) {
+                  final tripData = tripDoc.data() as Map<String, dynamic>;
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Container(
@@ -894,41 +589,28 @@ out center;
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        SnackBar(content: Text(e.toString())),
       );
     }
   }
 
   Future<void> _saveToTrip(String tripId) async {
     try {
-      final user = FirebaseAuth.instance.currentUser!;
-
-      final locationRef = FirebaseFirestore.instance.collection('location').doc();
       final placeName = _details?['name']?.toString() ??
           widget.place['name']?.toString() ??
           'Unknown';
 
-      await locationRef.set({
-        'locationID': locationRef.id,
-        'locationName': placeName,
-        'description': _details?['description']?.toString() ?? '',
-        'latitude': widget.place['latitude'] ?? 0.0,
-        'longitude': widget.place['longitude'] ?? 0.0,
-        'openingHours': _details?['openingHours']?.toString() ?? '',
-        'contactNo': _details?['phone']?.toString() ?? '',
-        'createdBy': user.uid,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      await TripController.addPlaceToTrip(
+        tripId: tripId,
+        placeName: placeName,
+        description: _details?['description']?.toString() ?? '',
+        latitude: widget.place['latitude'] ?? 0.0,
+        longitude: widget.place['longitude'] ?? 0.0,
+        openingHours: _details?['openingHours']?.toString() ?? '',
+        contactNo: _details?['phone']?.toString() ?? '',
+      );
 
-      final itineraryRef = FirebaseFirestore.instance.collection('itineraryItem').doc();
-      await itineraryRef.set({
-        'itineraryItemID': itineraryRef.id,
-        'tripID': tripId,
-        'locationID': locationRef.id,
-        'addedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 🆕 ADD THIS: Track place added to trip
+      // Track place added to trip
       final tags = widget.place['tags'] as Map<String, dynamic>?;
       final address = widget.place['address'] as Map<String, dynamic>?;
 
@@ -963,9 +645,10 @@ out center;
   @override
   Widget build(BuildContext context) {
     final placeName = _details?['name']?.toString() ??
-        _extractEnglishPlaceName() ??
+        StringHelper.extractEnglishPlaceName(widget.place) ??
         widget.place['name']?.toString() ??
         'Unknown Place';
+
     final address = widget.place['address'] as Map<String, dynamic>?;
     final city = address?['city']?.toString() ?? '';
     final state = address?['state']?.toString() ?? '';
@@ -1097,14 +780,31 @@ out center;
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        _buildCategoryIcon(Icons.restaurant, 'Food'),
-                        _buildCategoryIcon(Icons.hotel, 'Hotel'),
-                        _buildCategoryIcon(
-                            Icons.local_activity, 'Activity'),
-                        _buildCategoryIcon(
-                            Icons.camera_alt, 'Photo Spots'),
-                        _buildCategoryIcon(
-                            Icons.shopping_bag, 'Shopping'),
+                        CategoryIcon(
+                          icon: Icons.restaurant,
+                          label: 'Food',
+                          onTap: () => _searchNearbyCategory('Food'),
+                        ),
+                        CategoryIcon(
+                          icon: Icons.hotel,
+                          label: 'Hotel',
+                          onTap: () => _searchNearbyCategory('Hotel'),
+                        ),
+                        CategoryIcon(
+                          icon: Icons.local_activity,
+                          label: 'Activity',
+                          onTap: () => _searchNearbyCategory('Activity'),
+                        ),
+                        CategoryIcon(
+                          icon: Icons.camera_alt,
+                          label: 'Photo Spots',
+                          onTap: () => _searchNearbyCategory('Photo Spots'),
+                        ),
+                        CategoryIcon(
+                          icon: Icons.shopping_bag,
+                          label: 'Shopping',
+                          onTap: () => _searchNearbyCategory('Shopping'),
+                        ),
                       ],
                     ),
                   ),
@@ -1118,52 +818,42 @@ out center;
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (_details?['description']?.toString().isNotEmpty ??
-                      false)
-                    Text(
-                      _details!['description'].toString(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                        height: 1.5,
-                      ),
-                    )
-                  else
-                    Text(
-                      _getSmartFallbackDescription(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                        height: 1.5,
-                      ),
+                  Text(
+                    _details?['description']?.toString() ??
+                        StringHelper.getSmartFallbackDescription(
+                            widget.place['tags'] as Map<String, dynamic>?),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                      height: 1.5,
                     ),
+                  ),
                   const SizedBox(height: 24),
                   if (_details?['openingHours']?.toString() !=
                       'Not available' &&
                       _details?['openingHours']?.toString().isNotEmpty ==
                           true)
-                    _buildDetailRow(
-                      Icons.access_time,
-                      'Opening Hours',
-                      _formatOpeningHours(
+                    DetailRow(
+                      icon: Icons.access_time,
+                      label: 'Opening Hours',
+                      value: StringHelper.formatOpeningHours(
                           _details!['openingHours'].toString()),
                     ),
                   if (_details?['phone']?.toString() != 'Not available' &&
                       _details?['phone']?.toString().isNotEmpty == true)
-                    _buildDetailRow(
-                      Icons.phone,
-                      'Contact',
-                      _details!['phone'].toString(),
+                    DetailRow(
+                      icon: Icons.phone,
+                      label: 'Contact',
+                      value: _details!['phone'].toString(),
                     ),
-                  if (_details?['website']?.toString().isNotEmpty ??
-                      false)
+                  if (_details?['website']?.toString().isNotEmpty ?? false)
                     InkWell(
                       onTap: () =>
                           _launchURL(_details!['website'].toString()),
-                      child: _buildDetailRow(
-                        Icons.language,
-                        'Website',
-                        _details!['website'].toString(),
+                      child: DetailRow(
+                        icon: Icons.language,
+                        label: 'Website',
+                        value: _details!['website'].toString(),
                         isLink: true,
                       ),
                     ),
@@ -1199,104 +889,5 @@ out center;
         ],
       ),
     );
-  }
-
-  Widget _buildCategoryIcon(IconData icon, String label) {
-    return InkWell(
-      onTap: () => _searchNearbyCategory(label),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        margin: const EdgeInsets.only(right: 12),
-        child: Column(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: const Color(0xFF4A90E2).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                icon,
-                color: const Color(0xFF4A90E2),
-                size: 28,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey[700],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(IconData icon, String label, String value,
-      {bool isLink = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFF4A90E2).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              icon,
-              color: const Color(0xFF4A90E2),
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isLink ? const Color(0xFF4A90E2) : Colors.black87,
-                    fontWeight: FontWeight.w500,
-                    decoration: isLink ? TextDecoration.underline : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (isLink)
-            Icon(
-              Icons.open_in_new,
-              size: 16,
-              color: Colors.grey[400],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-extension StringExtension on String {
-  String capitalize() {
-    if (isEmpty) return this;
-    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

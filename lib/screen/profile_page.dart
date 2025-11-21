@@ -1,9 +1,10 @@
 // ============================================
-// VIEW PROFILE PAGE (FIXED - Properly reads from Firebase)
+// VIEW PROFILE PAGE (REFACTORED - UI Only)
+// Location: lib/screen/view_profile_page.dart
 // ============================================
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:wandry/controller/profile_controller.dart';
+import 'package:wandry/widget/profile_field_widget.dart';
 import 'edit_profile_page.dart';
 
 class ViewProfilePage extends StatefulWidget {
@@ -14,89 +15,28 @@ class ViewProfilePage extends StatefulWidget {
 }
 
 class _ViewProfilePageState extends State<ViewProfilePage> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ProfileController _profileController = ProfileController();
 
-  User? currentUser;
   Map<String, dynamic>? profileData;
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    currentUser = _auth.currentUser;
     _loadProfile();
   }
 
   // ---------------------------------------------------
-  // LOAD PROFILE FROM FIREBASE (FIXED)
+  // LOAD PROFILE (Calls Controller)
   // ---------------------------------------------------
   Future<void> _loadProfile() async {
-    if (currentUser == null) return;
-
     setState(() => isLoading = true);
 
     try {
-      print('🔍 Loading profile for UID: ${currentUser!.uid}');
-
-      // Step 1: Get user document to find userID and email
-      QuerySnapshot userQuery = await _firestore
-          .collection('user')
-          .where('firebaseUid', isEqualTo: currentUser!.uid)
-          .limit(1)
-          .get();
-
-      if (userQuery.docs.isEmpty) {
-        print('❌ No user document found');
-        throw 'User profile not found';
-      }
-
-      Map<String, dynamic> userData = userQuery.docs.first.data() as Map<String, dynamic>;
-      String email = userData['email'] ?? currentUser!.email ?? 'Not set';
-      String role = userData['role'] ?? 'Customer';
-
-      print('✅ User found - Role: $role, Email: $email');
-
-      // Step 2: Get customer profile using firebaseUid
-      QuerySnapshot profileQuery = await _firestore
-          .collection('customerProfile')
-          .where('firebaseUid', isEqualTo: currentUser!.uid)
-          .limit(1)
-          .get();
-
-      if (profileQuery.docs.isEmpty) {
-        print('❌ No customer profile found');
-        // Use fallback data
-        profileData = {
-          'firstName': currentUser!.displayName ?? 'User',
-          'lastName': '',
-          'email': email,
-          'phoneNumber': 'Not set',
-        };
-      } else {
-        Map<String, dynamic> customerData = profileQuery.docs.first.data() as Map<String, dynamic>;
-
-        print('✅ Customer profile found');
-        print('📋 Data: $customerData');
-
-        // Combine firstName and lastName for display
-        String firstName = customerData['firstName'] ?? '';
-        String lastName = customerData['lastName'] ?? '';
-        String fullName = '$firstName $lastName'.trim();
-        if (fullName.isEmpty) fullName = 'User';
-
-        profileData = {
-          'fullName': fullName,
-          'firstName': firstName,
-          'lastName': lastName,
-          'email': email,
-          'phoneNumber': customerData['phoneNumber'] ?? 'Not set',
-          'custProfileID': customerData['custProfileID'],
-          'userID': customerData['userID'],
-        };
-
-        print('✅ Profile data loaded: $profileData');
-      }
+      final data = await _profileController.loadProfile();
+      setState(() {
+        profileData = data;
+      });
     } catch (e) {
       print('❌ Error loading profile: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,20 +44,22 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
       );
 
       // Set fallback data
-      profileData = {
-        'fullName': currentUser?.displayName ?? 'User',
-        'firstName': currentUser?.displayName ?? 'User',
-        'lastName': '',
-        'email': currentUser?.email ?? 'Not set',
-        'phoneNumber': 'Not set',
-      };
+      setState(() {
+        profileData = {
+          'fullName': _profileController.currentUser?.displayName ?? 'User',
+          'firstName': _profileController.currentUser?.displayName ?? 'User',
+          'lastName': '',
+          'email': _profileController.currentUser?.email ?? 'Not set',
+          'phoneNumber': 'Not set',
+        };
+      });
     }
 
     if (mounted) setState(() => isLoading = false);
   }
 
   // ---------------------------------------------------
-  // DELETE ACCOUNT (Fixed to use correct collections)
+  // DELETE ACCOUNT (Calls Controller)
   // ---------------------------------------------------
   Future<void> _deleteAccount() async {
     final confirm = await showDialog<bool>(
@@ -144,46 +86,7 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
     if (confirm != true) return;
 
     try {
-      print('🗑️ Starting account deletion...');
-
-      // Delete all trips belonging to user
-      final trips = await _firestore
-          .collection('trips')
-          .where('firebaseUid', isEqualTo: currentUser?.uid)
-          .get();
-
-      for (var doc in trips.docs) {
-        await doc.reference.delete();
-      }
-      print('✅ Deleted ${trips.docs.length} trips');
-
-      // Delete customer profile
-      final profileQuery = await _firestore
-          .collection('customerProfile')
-          .where('firebaseUid', isEqualTo: currentUser?.uid)
-          .limit(1)
-          .get();
-
-      if (profileQuery.docs.isNotEmpty) {
-        await profileQuery.docs.first.reference.delete();
-        print('✅ Deleted customer profile');
-      }
-
-      // Delete user document
-      final userQuery = await _firestore
-          .collection('user')
-          .where('firebaseUid', isEqualTo: currentUser?.uid)
-          .limit(1)
-          .get();
-
-      if (userQuery.docs.isNotEmpty) {
-        await userQuery.docs.first.reference.delete();
-        print('✅ Deleted user document');
-      }
-
-      // Delete Firebase Auth user
-      await currentUser!.delete();
-      print('✅ Deleted Firebase Auth user');
+      await _profileController.deleteAccount();
 
       // Navigate to login
       if (mounted) {
@@ -288,43 +191,6 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ---------------------------------------------------
-// REUSABLE PROFILE FIELD WIDGET
-// ---------------------------------------------------
-class ProfileField extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const ProfileField({super.key, required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-        ),
-        SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
-          child: Text(
-            value,
-            style: TextStyle(fontSize: 16, color: Colors.black87),
-          ),
-        ),
-      ],
     );
   }
 }

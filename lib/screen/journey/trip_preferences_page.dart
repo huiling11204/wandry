@@ -1,7 +1,9 @@
-import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:wandry/controller/destination_search_controller.dart';
+import 'package:wandry/widget/destination_autocomplete_widget.dart';
+import 'package:wandry/widget/budget_selector_widget.dart';
+import 'package:wandry/widget/progress_indicator_widget.dart';
+import 'package:wandry/utilities/date_formatter.dart';
 import 'trip_generation_loading.dart';
 
 class TripPreferencesPage extends StatefulWidget {
@@ -20,54 +22,63 @@ class TripPreferencesPage extends StatefulWidget {
 
 class _TripPreferencesPageState extends State<TripPreferencesPage> {
   final _formKey = GlobalKey<FormState>();
+  late DestinationSearchController _searchController;
 
-  // Controllers
+  // Form fields
   final TextEditingController _destinationController = TextEditingController();
+  final FocusNode _destinationFocusNode = FocusNode();
+  final LayerLink _layerLink = LayerLink();
+
   DateTime? _startDate;
   DateTime? _endDate;
   String _budgetLevel = 'Medium';
 
-  // Autocomplete state
+  // Search state
   bool _isSearching = false;
   List<Map<String, dynamic>> _searchResults = [];
-  Timer? _debounce;
-  OverlayEntry? _overlayEntry;
-  final LayerLink _layerLink = LayerLink();
-  final FocusNode _destinationFocusNode = FocusNode();
-
-  // Selected destination details
   Map<String, dynamic>? _selectedDestination;
-
-  final String _searchUrl =
-      "https://us-central1-trip-planner-ec182.cloudfunctions.net/searchDestinations";
+  OverlayEntry? _overlayEntry;
 
   @override
   void initState() {
     super.initState();
+    _searchController = DestinationSearchController();
+    _setupSearchController();
     _destinationController.addListener(_onDestinationChanged);
     _destinationFocusNode.addListener(_onFocusChanged);
   }
 
   @override
   void dispose() {
-    _destinationController.removeListener(_onDestinationChanged);
-    _destinationFocusNode.removeListener(_onFocusChanged);
+    _searchController.dispose();
     _destinationController.dispose();
     _destinationFocusNode.dispose();
-    _debounce?.cancel();
     _removeOverlay();
     super.dispose();
   }
 
-  void _onFocusChanged() {
-    if (!_destinationFocusNode.hasFocus) {
-      _removeOverlay();
-    }
+  void _setupSearchController() {
+    _searchController.onSearchStateChanged = (isSearching) {
+      setState(() => _isSearching = isSearching);
+    };
+
+    _searchController.onResultsChanged = (results) {
+      setState(() => _searchResults = results);
+      if (results.isNotEmpty && _destinationFocusNode.hasFocus) {
+        _showOverlay();
+      } else {
+        _removeOverlay();
+      }
+    };
+
+    _searchController.onError = (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error)),
+      );
+    };
   }
 
   void _onDestinationChanged() {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-
     final query = _destinationController.text.trim();
 
     if (query.isEmpty) {
@@ -82,43 +93,14 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
     // If user is typing, clear selected destination
     if (_selectedDestination != null &&
         _destinationController.text != _selectedDestination!['display_name']) {
-      _selectedDestination = null;
+      setState(() => _selectedDestination = null);
     }
 
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      _searchDestination(query);
-    });
+    _searchController.searchDestination(query);
   }
 
-  Future<void> _searchDestination(String query) async {
-    if (query.isEmpty) return;
-
-    setState(() => _isSearching = true);
-
-    try {
-      final response = await http.post(
-        Uri.parse(_searchUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'query': query, 'limit': 10}),
-      ).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          setState(() {
-            _searchResults = List<Map<String, dynamic>>.from(data['results'] ?? []);
-            _isSearching = false;
-          });
-
-          if (_searchResults.isNotEmpty && _destinationFocusNode.hasFocus) {
-            _showOverlay();
-          } else {
-            _removeOverlay();
-          }
-        }
-      }
-    } catch (e) {
-      setState(() => _isSearching = false);
+  void _onFocusChanged() {
+    if (!_destinationFocusNode.hasFocus) {
       _removeOverlay();
     }
   }
@@ -127,34 +109,10 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
     _removeOverlay();
 
     _overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        width: MediaQuery.of(context).size.width - 32,
-        child: CompositedTransformFollower(
-          link: _layerLink,
-          showWhenUnlinked: false,
-          offset: const Offset(0, 60),
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              constraints: const BoxConstraints(maxHeight: 300),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: _searchResults.length,
-                itemBuilder: (context, index) {
-                  final place = _searchResults[index];
-                  return _buildSuggestionItem(place);
-                },
-              ),
-            ),
-          ),
-        ),
+      builder: (context) => DestinationAutocompleteWidget(
+        searchResults: _searchResults,
+        layerLink: _layerLink,
+        onSelectDestination: _onSelectDestination,
       ),
     );
 
@@ -166,94 +124,23 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
     _overlayEntry = null;
   }
 
-  Widget _buildSuggestionItem(Map<String, dynamic> place) {
-    final name = place['name']?.toString() ?? 'Unknown';
+  void _onSelectDestination(Map<String, dynamic> place) {
+    final displayName = _searchController.formatDestinationDisplay(place);
     final address = place['address'] as Map<String, dynamic>?;
     final city = address?['city']?.toString() ?? '';
     final country = address?['country']?.toString() ?? '';
 
-    String subtitle = '';
-    if (city.isNotEmpty && country.isNotEmpty) {
-      subtitle = '$city, $country';
-    } else if (city.isNotEmpty) {
-      subtitle = city;
-    } else if (country.isNotEmpty) {
-      subtitle = country;
-    }
-
-    // Create display name
-    String displayName = name;
-    if (subtitle.isNotEmpty) {
-      displayName = '$name, $subtitle';
-    }
-
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedDestination = {
-            ...place,
-            'display_name': displayName,
-            'city': city,
-            'country': country,
-          };
-          _destinationController.text = displayName;
-        });
-        _removeOverlay();
-        _destinationFocusNode.unfocus();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: Colors.grey[200]!),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4A90E2).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.location_on,
-                size: 20,
-                color: Color(0xFF4A90E2),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (subtitle.isNotEmpty)
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    setState(() {
+      _selectedDestination = {
+        ...place,
+        'display_name': displayName,
+        'city': city,
+        'country': country,
+      };
+      _destinationController.text = displayName;
+    });
+    _removeOverlay();
+    _destinationFocusNode.unfocus();
   }
 
   @override
@@ -285,10 +172,10 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
               padding: const EdgeInsets.all(24),
               children: [
                 // Progress indicator
-                _buildProgressIndicator(),
+                const ProgressIndicatorWidget(currentStep: 2, totalSteps: 3),
                 const SizedBox(height: 32),
 
-                // Destination field with autocomplete
+                // Destination field
                 const Text(
                   'Where to?',
                   style: TextStyle(
@@ -360,10 +247,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                 const SizedBox(height: 8),
                 Text(
                   'Start typing to see suggestions',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                 ),
                 const SizedBox(height: 24),
 
@@ -393,7 +277,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                         Text(
                           _startDate == null
                               ? 'Select start date'
-                              : _formatDate(_startDate!),
+                              : DateFormatter.formatDate(_startDate!),
                           style: TextStyle(
                             fontSize: 16,
                             color: _startDate == null ? Colors.grey[600] : Colors.black87,
@@ -416,9 +300,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                 ),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _startDate == null
-                      ? null
-                      : () => _selectEndDate(context),
+                  onTap: _startDate == null ? null : () => _selectEndDate(context),
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -438,7 +320,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                         Text(
                           _endDate == null
                               ? 'Select end date'
-                              : _formatDate(_endDate!),
+                              : DateFormatter.formatDate(_endDate!),
                           style: TextStyle(
                             fontSize: 16,
                             color: _endDate == null ? Colors.grey[600] : Colors.black87,
@@ -453,10 +335,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       'Please select start date first',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                     ),
                   ),
                 const SizedBox(height: 24),
@@ -471,22 +350,15 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _buildBudgetChip('Low', Icons.attach_money),
-                    const SizedBox(width: 12),
-                    _buildBudgetChip('Medium', Icons.monetization_on),
-                    const SizedBox(width: 12),
-                    _buildBudgetChip('High', Icons.diamond),
-                  ],
+                BudgetSelectorWidget(
+                  selectedBudget: _budgetLevel,
+                  onBudgetSelected: (budget) => setState(() => _budgetLevel = budget),
                 ),
                 const SizedBox(height: 32),
 
                 // Generate button
                 ElevatedButton(
-                  onPressed: _startDate != null && _endDate != null
-                      ? _generateTrip
-                      : null,
+                  onPressed: _startDate != null && _endDate != null ? _generateTrip : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4A90E2),
                     disabledBackgroundColor: Colors.grey[300],
@@ -512,100 +384,16 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
     );
   }
 
-  Widget _buildProgressIndicator() {
-    return Row(
-      children: [
-        _buildProgressDot(true, 1),
-        _buildProgressLine(true),
-        _buildProgressDot(true, 2),
-        _buildProgressLine(false),
-        _buildProgressDot(false, 3),
-      ],
-    );
-  }
-
-  Widget _buildProgressDot(bool isActive, int step) {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        color: isActive ? const Color(0xFF4A90E2) : Colors.grey[300],
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          '$step',
-          style: TextStyle(
-            color: isActive ? Colors.white : Colors.grey[600],
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProgressLine(bool isActive) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: isActive ? const Color(0xFF4A90E2) : Colors.grey[300],
-      ),
-    );
-  }
-
-  Widget _buildBudgetChip(String label, IconData icon) {
-    final isSelected = _budgetLevel == label;
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _budgetLevel = label),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? const Color(0xFF4A90E2).withOpacity(0.1)
-                : Colors.grey[50],
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? const Color(0xFF4A90E2) : Colors.grey[300]!,
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: isSelected ? const Color(0xFF4A90E2) : Colors.grey[600],
-                size: 24,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  color: isSelected ? const Color(0xFF4A90E2) : Colors.grey[700],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _selectStartDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
       firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 730)), // 2 years
+      lastDate: DateTime.now().add(const Duration(days: 730)),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF4A90E2),
-            ),
+            colorScheme: const ColorScheme.light(primary: Color(0xFF4A90E2)),
           ),
           child: child!,
         );
@@ -615,7 +403,6 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
     if (picked != null) {
       setState(() {
         _startDate = picked;
-        // Reset end date if it's before new start date
         if (_endDate != null && _endDate!.isBefore(_startDate!)) {
           _endDate = null;
         }
@@ -634,9 +421,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF4A90E2),
-            ),
+            colorScheme: const ColorScheme.light(primary: Color(0xFF4A90E2)),
           ),
           child: child!,
         );
@@ -664,33 +449,18 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
         return;
       }
 
-      // Extract city and country from selected destination
-      String city = (_selectedDestination!['city'] ?? '').toString().trim();
-      String country = (_selectedDestination!['country'] ?? '').toString().trim();
+      // Extract city and country
+      final extracted = _searchController.extractCityAndCountry(
+        _selectedDestination,
+        _destinationController.text.trim(),
+      );
 
-      // 🔧 FALLBACK: If city/country are empty, try parsing from destination text
-      if (city.isEmpty || country.isEmpty) {
-        final destinationText = _destinationController.text.trim();
+      final city = extracted['city']!;
+      final country = extracted['country']!;
 
-        // Try to parse "City, Country" or "City, State, Country" format
-        final parts = destinationText.split(',').map((s) => s.trim()).toList();
-
-        if (parts.length >= 2) {
-          // Example: "Tokyo, Japan" → city="Tokyo", country="Japan"
-          // Example: "Paris, France, Europe" → city="Paris", country="Europe"
-          if (city.isEmpty) city = parts[0];
-          if (country.isEmpty) country = parts[parts.length - 1]; // Last part is usually country
-        } else if (parts.length == 1) {
-          // If only one part, use it as both (better than empty)
-          if (city.isEmpty) city = parts[0];
-          if (country.isEmpty) country = parts[0];
-        }
-      }
-
-      // 🔧 VALIDATION: Ensure city and country are not empty
       if (city.isEmpty || country.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text(
               'Cannot determine city and country from destination. Please try selecting a different destination.',
             ),
@@ -701,20 +471,15 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
         return;
       }
 
-      // 🔍 DEBUG: Print what we're sending (helps with troubleshooting)
       print('🔍 Destination Information:');
       print('   Display Name: ${_destinationController.text}');
       print('   City: $city');
       print('   Country: $country');
-      print('   Start Date: $_startDate');
-      print('   End Date: $_endDate');
-      print('   Budget: $_budgetLevel');
 
-      // Navigate to loading/generation page
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => TripGenerationLoading(
+          builder: (context) => TripGenerationLoadingPage(
             tripName: widget.tripName,
             tripDescription: widget.tripDescription,
             destination: _destinationController.text,
@@ -728,13 +493,5 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
         ),
       );
     }
-  }
-
-  String _formatDate(DateTime date) {
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }

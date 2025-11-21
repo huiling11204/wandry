@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wandry/backend/interaction_tracker.dart';
+import 'package:wandry/controller/interaction_tracker.dart';
 
 /// Beautiful dialog for rating completed trips
 /// Shows after a user marks a trip as completed
