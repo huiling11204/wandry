@@ -1,8 +1,13 @@
+// lib/pages/trip_preferences_page.dart
+// UPDATED: Added destination type selection
+
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/destination_search_controller.dart';
 import 'package:wandry/widget/destination_autocomplete_widget.dart';
 import 'package:wandry/widget/budget_selector_widget.dart';
 import 'package:wandry/widget/progress_indicator_widget.dart';
+import 'package:wandry/widget/destination_type_selector_widget.dart';
+import 'package:wandry/model/destination_type_model.dart';
 import 'package:wandry/utilities/date_formatter.dart';
 import 'trip_generation_loading.dart';
 
@@ -32,6 +37,9 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
   DateTime? _startDate;
   DateTime? _endDate;
   String _budgetLevel = 'Medium';
+
+  // NEW: Destination type preferences
+  List<String> _selectedDestinationTypes = ['relaxing']; // Default selection
 
   // Search state
   bool _isSearching = false;
@@ -71,10 +79,11 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
       }
     };
 
+    // CHANGED: Don't show snackbar for search errors - too intrusive
     _searchController.onError = (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error)),
-      );
+      // Just log it, don't show snackbar for autocomplete failures
+      print('Search error: $error');
+      // User can simply try typing again
     };
   }
 
@@ -90,7 +99,6 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
       return;
     }
 
-    // If user is typing, clear selected destination
     if (_selectedDestination != null &&
         _destinationController.text != _selectedDestination!['display_name']) {
       setState(() => _selectedDestination = null);
@@ -354,11 +362,62 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                   selectedBudget: _budgetLevel,
                   onBudgetSelected: (budget) => setState(() => _budgetLevel = budget),
                 ),
+                const SizedBox(height: 24),
+
+                // NEW: Destination Type Preferences
+                Row(
+                  children: [
+                    const Text(
+                      'Trip Style',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4A90E2).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'NEW',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF4A90E2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Personalize your itinerary based on your interests',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 12),
+                DestinationTypeSelectorWidget(
+                  selectedTypeIds: _selectedDestinationTypes,
+                  onSelectionChanged: (types) {
+                    setState(() {
+                      _selectedDestinationTypes = types;
+                    });
+                  },
+                  maxSelection: 3,
+                  minSelection: 1,
+                ),
                 const SizedBox(height: 32),
 
                 // Generate button
                 ElevatedButton(
-                  onPressed: _startDate != null && _endDate != null ? _generateTrip : null,
+                  onPressed: _startDate != null &&
+                      _endDate != null &&
+                      _selectedDestinationTypes.isNotEmpty
+                      ? _generateTrip
+                      : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4A90E2),
                     disabledBackgroundColor: Colors.grey[300],
@@ -376,6 +435,42 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+
+                // Selected preferences summary
+                if (_selectedDestinationTypes.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green[200]!),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.check_circle,
+                                size: 16,
+                                color: Colors.green[700]),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Your trip will focus on:',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        DestinationTypeChips(typeIds: _selectedDestinationTypes),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -449,7 +544,13 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
         return;
       }
 
-      // Extract city and country
+      if (_selectedDestinationTypes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select at least one trip style')),
+        );
+        return;
+      }
+
       final extracted = _searchController.extractCityAndCountry(
         _selectedDestination,
         _destinationController.text.trim(),
@@ -475,6 +576,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
       print('   Display Name: ${_destinationController.text}');
       print('   City: $city');
       print('   Country: $country');
+      print('   Trip Styles: $_selectedDestinationTypes');
 
       Navigator.push(
         context,
@@ -489,6 +591,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
             endDate: _endDate!,
             budgetLevel: _budgetLevel,
             destinationData: _selectedDestination,
+            destinationTypes: _selectedDestinationTypes, // NEW
           ),
         ),
       );

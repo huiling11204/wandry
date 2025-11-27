@@ -1,3 +1,6 @@
+// lib/model/trip_model.dart
+// UPDATED: Added data quality and warning fields
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TripModel {
@@ -13,6 +16,14 @@ class TripModel {
   final List<String>? features;
   final Map<String, dynamic>? mlMetrics;
 
+  // NEW: Data quality fields
+  final String? dataQuality;           // 'good' or 'limited'
+  final bool? isSparseDataArea;        // true if limited restaurant data
+  final int? totalRestaurantsFound;    // Total restaurants found
+  final String? destinationWarning;    // Warning message if any
+  final String? destinationType;       // 'normal', 'large', 'remote', 'recommended'
+  final List<String>? destinationTypes; // User selected trip styles
+
   TripModel({
     required this.id,
     required this.tripName,
@@ -25,6 +36,12 @@ class TripModel {
     this.destinationCurrency,
     this.features,
     this.mlMetrics,
+    this.dataQuality,
+    this.isSparseDataArea,
+    this.totalRestaurantsFound,
+    this.destinationWarning,
+    this.destinationType,
+    this.destinationTypes,
   });
 
   factory TripModel.fromFirestore(DocumentSnapshot doc) {
@@ -43,6 +60,15 @@ class TripModel {
           ? List<String>.from(data['features'])
           : null,
       mlMetrics: data['mlMetrics'],
+      // NEW fields
+      dataQuality: data['dataQuality'],
+      isSparseDataArea: data['isSparseDataArea'],
+      totalRestaurantsFound: data['totalRestaurantsFound'],
+      destinationWarning: data['destinationWarning'],
+      destinationType: data['destinationType'],
+      destinationTypes: data['destinationTypes'] != null
+          ? List<String>.from(data['destinationTypes'])
+          : null,
     );
   }
 
@@ -60,4 +86,18 @@ class TripModel {
   }
 
   int get durationInDays => endDate.difference(startDate).inDays + 1;
+
+  // NEW: Helper methods
+  bool get hasLimitedData => dataQuality == 'limited' || isSparseDataArea == true;
+
+  bool get isRemoteArea => destinationType == 'remote';
+
+  bool get isLargeCity => destinationType == 'large';
+
+  String? get dataQualityMessage {
+    if (hasLimitedData) {
+      return 'This area has limited data. Some meal options may be fewer than usual.';
+    }
+    return null;
+  }
 }

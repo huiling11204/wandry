@@ -106,7 +106,7 @@ class AuthService {
   }
 
   // ==========================================
-  // Sign In
+  // Sign In (Works for both Customer and Admin)
   // ==========================================
   Future<UserCredential?> signInWithEmailAndPassword(String email, String password) async {
     try {
@@ -162,24 +162,24 @@ class AuthService {
   }
 
   // ==========================================
-  // Register User
+  // Register User (CUSTOMER ONLY!)
+  // Admins must be created manually in Firebase Console
   // ==========================================
   Future<UserCredential?> createUserWithEmailAndPassword({
     required String email,
     required String password,
     required String name,
     required String contact,
-    String role = 'Customer',
   }) async {
     UserCredential? result;
     String? userID;
 
     try {
-      print('🚀 Starting registration process...');
+      print('🚀 Starting CUSTOMER registration process...');
       print('📧 Email: $email');
       print('👤 Name: $name');
       print('📱 Contact: $contact');
-      print('🎭 Role: $role');
+      print('🎭 Role: Customer (FIXED)');
 
       // Step 1: Create Firebase Auth user
       print('🔐 Creating Firebase Auth user...');
@@ -191,18 +191,18 @@ class AuthService {
 
       if (result.user != null) {
         try {
-          // Step 2: Generate custom userID
+          // Step 2: Generate custom userID (Customer only)
           print('🔢 Generating custom UserID...');
-          userID = await _getNextUserId(role);
+          userID = await _getNextUserId('Customer');
           print('✅ Generated custom UserID: $userID');
 
-          // Step 3: Create user document
+          // Step 3: Create user document (Customer role only)
           print('📝 Creating user document...');
           Map<String, dynamic> userData = {
             'userID': userID,
             'firebaseUid': result.user!.uid,
             'email': email.trim(),
-            'role': role,
+            'role': 'Customer', // HARDCODED - Only customers can register
             'registrationDate': FieldValue.serverTimestamp(),
             'lastLoginDate': FieldValue.serverTimestamp(),
           };
@@ -210,33 +210,25 @@ class AuthService {
           await _firestore.collection('user').doc(userID).set(userData);
           print('✅ User document created at: user/$userID');
 
-          // Step 4: Create role-specific profile
-          if (role == 'Customer') {
-            await _createCustomerProfile(
-              userID: userID,
-              firebaseUid: result.user!.uid,
-              name: name,
-              contact: contact,
-            );
-          } else if (role == 'Admin') {
-            await _createAdminProfile(
-              userID: userID,
-              firebaseUid: result.user!.uid,
-              name: name,
-            );
-          }
+          // Step 4: Create customer profile
+          await _createCustomerProfile(
+            userID: userID,
+            firebaseUid: result.user!.uid,
+            name: name,
+            contact: contact,
+          );
 
           // Step 5: Update display name
           print('🏷️ Updating display name...');
           await result.user!.updateDisplayName(name);
           print('✅ Display name updated');
 
-          print('🎉 Registration completed successfully!');
+          print('🎉 Customer registration completed successfully!');
           print('📋 Summary:');
           print('   User ID: $userID');
           print('   Firebase UID: ${result.user!.uid}');
           print('   Email: $email');
-          print('   Role: $role');
+          print('   Role: Customer');
 
           return result;
 
@@ -306,31 +298,35 @@ class AuthService {
   }
 
   // ==========================================
-  // Create Admin Profile
+  // NOTE: Admin Profile Creation is DISABLED
+  // Admins must be manually created in Firebase Console
   // ==========================================
-  Future<void> _createAdminProfile({
-    required String userID,
-    required String firebaseUid,
-    required String name,
-  }) async {
-    print('👨‍💼 Creating admin profile...');
-
-    String adminProfileID = await _getNextProfileId('Admin');
-
-    Map<String, dynamic> adminData = {
-      'adminProfileID': adminProfileID,
-      'userID': userID,
-      'firebaseUid': firebaseUid,
-      'adminName': name.trim(),
-    };
-
-    print('💾 Saving admin profile to adminProfile/$adminProfileID');
-    await _firestore.collection('adminProfile').doc(adminProfileID).set(adminData);
-    print('✅ Admin profile created with ID: $adminProfileID');
-  }
+  // If you need to manually create an admin via console, use this structure:
+  //
+  // 1. Create Firebase Auth user manually
+  // 2. In Firestore, create documents:
+  //
+  //    user/{adminUserID}:
+  //    {
+  //      userID: "A20251122XXXX",
+  //      firebaseUid: "{firebase_uid}",
+  //      email: "admin@example.com",
+  //      role: "Admin",
+  //      registrationDate: {timestamp},
+  //      lastLoginDate: {timestamp}
+  //    }
+  //
+  //    adminProfile/{adminProfileID}:
+  //    {
+  //      adminProfileID: "AP20251122XXXX",
+  //      userID: "A20251122XXXX",
+  //      firebaseUid: "{firebase_uid}",
+  //      adminName: "Admin Name"
+  //    }
+  // ==========================================
 
   // ==========================================
-  // Get User Profile
+  // Get User Profile (Works for both Customer and Admin)
   // ==========================================
   Future<Map<String, dynamic>?> getUserProfile(String firebaseUid) async {
     try {

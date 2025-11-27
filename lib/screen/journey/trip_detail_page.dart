@@ -1,16 +1,21 @@
+// lib/pages/trip_detail_page.dart
+// COMPLETE MERGED VERSION: Original trip_detail_page.dart + Edit functionality
+// This combines ALL your existing code with the new edit features
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../../model/trip_model.dart';
-import '../../widget/accommodation_tab.dart';
-import '../../widget/budget_tab.dart';
-import '../../widget/itinerary_tab.dart';
-import '../../widget/restaurant_tab.dart';
-import '../../widget/resources_tab.dart';
-import '../../widget/ml_insight_tab.dart';
-import '../../utilities/currency_helper.dart';
-import '../../controller/export_controller.dart';
-import '../../widget/export_share_ui.dart';
+import 'package:wandry/model/trip_model.dart';
+import 'package:wandry/widget/accommodation_tab.dart';
+import 'package:wandry/widget/budget_tab.dart';
+import 'package:wandry/widget/itinerary_tab.dart';
+import 'package:wandry/widget/restaurant_tab.dart';
+import 'package:wandry/widget/resources_tab.dart';
+import 'package:wandry/widget/ml_insight_tab.dart';
+import 'package:wandry/utilities/currency_helper.dart';
+import 'package:wandry/controller/export_controller.dart';
+import 'package:wandry/widget/export_share_ui.dart';
+import 'edit_trip_preferences_page.dart'; // NEW: Import for edit functionality
 
 class TripDetailPage extends StatefulWidget {
   final String tripId;
@@ -18,15 +23,14 @@ class TripDetailPage extends StatefulWidget {
   const TripDetailPage({super.key, required this.tripId});
 
   @override
-  State<TripDetailPage> createState() =>
-      _TripDetailPageState();
+  State<TripDetailPage> createState() => _TripDetailPageState();
 }
 
 class _TripDetailPageState extends State<TripDetailPage>
     with TickerProviderStateMixin {
   late TabController _tabController;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final ExportController _exportController = ExportController(); // Instantiate the controller
+  final ExportController _exportController = ExportController();
 
   @override
   void initState() {
@@ -111,6 +115,13 @@ class _TripDetailPageState extends State<TripDetailPage>
           batch.delete(doc.reference);
         }
 
+        // Also try to delete by document ID (your structure)
+        try {
+          await _firestore.collection('accommodation').doc(widget.tripId).delete();
+        } catch (e) {
+          // Ignore if doesn't exist
+        }
+
         await batch.commit();
 
         if (mounted) {
@@ -134,6 +145,29 @@ class _TripDetailPageState extends State<TripDetailPage>
     }
   }
 
+  // NEW: Open edit preferences page
+  void _openEditPage(Map<String, dynamic> tripData) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditTripPreferencesPage(
+          tripId: widget.tripId,
+          tripData: tripData,
+        ),
+      ),
+    );
+
+    // If changes were made, show a success message
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Trip updated successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -149,17 +183,19 @@ class _TripDetailPageState extends State<TripDetailPage>
             return const Center(child: Text('Trip not found'));
           }
 
+          // NEW: Get raw tripData for edit functionality
+          final tripData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
           final trip = TripModel.fromFirestore(snapshot.data!);
 
           return NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) {
               return [
-                _buildAppBar(trip),
+                _buildAppBar(trip, tripData),
               ];
             },
             body: Column(
               children: [
-                _buildTripInfoCard(trip),
+                _buildTripInfoCard(trip, tripData),
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
@@ -181,7 +217,7 @@ class _TripDetailPageState extends State<TripDetailPage>
     );
   }
 
-  Widget _buildAppBar(TripModel trip) {
+  Widget _buildAppBar(TripModel trip, Map<String, dynamic> tripData) {
     return SliverAppBar(
       expandedHeight: 200,
       pinned: true,
@@ -219,6 +255,13 @@ class _TripDetailPageState extends State<TripDetailPage>
         ),
       ),
       actions: [
+        // NEW: Edit button - prominent in app bar
+        IconButton(
+          icon: const Icon(Icons.edit),
+          tooltip: 'Edit Trip',
+          onPressed: () => _openEditPage(tripData),
+        ),
+
         // SHARE BUTTON - Shows bottom sheet
         IconButton(
           icon: const Icon(Icons.share),
@@ -232,19 +275,20 @@ class _TripDetailPageState extends State<TripDetailPage>
         // POPUP MENU
         PopupMenuButton(
           itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'export',
-              child: ListTile(
-                leading: Icon(Icons.file_download),  // Changed icon
-                title: Text('Export & Share'),       // Changed text
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
+            // NEW: Edit option in menu
             const PopupMenuItem(
               value: 'edit',
               child: ListTile(
                 leading: Icon(Icons.edit),
-                title: Text('Edit Trip'),
+                title: Text('Edit Trip Preferences'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'export',
+              child: ListTile(
+                leading: Icon(Icons.file_download),
+                title: Text('Export & Share'),
                 contentPadding: EdgeInsets.zero,
               ),
             ),
@@ -264,9 +308,8 @@ class _TripDetailPageState extends State<TripDetailPage>
               // Show beautiful bottom sheet
               ExportShareBottomSheet.show(context, widget.tripId);
             } else if (value == 'edit') {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Edit feature coming soon')),
-              );
+              // NEW: Handle edit from menu
+              _openEditPage(tripData);
             }
           },
         ),
@@ -304,7 +347,8 @@ class _TripDetailPageState extends State<TripDetailPage>
     );
   }
 
-  Widget _buildTripInfoCard(TripModel trip) {
+  // UPDATED: Added tripData parameter and edit button
+  Widget _buildTripInfoCard(TripModel trip, Map<String, dynamic> tripData) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -342,6 +386,16 @@ class _TripDetailPageState extends State<TripDetailPage>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              // NEW: Quick edit button
+              TextButton.icon(
+                onPressed: () => _openEditPage(tripData),
+                icon: const Icon(Icons.edit, size: 16),
+                label: const Text('Edit', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.blue,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -373,6 +427,32 @@ class _TripDetailPageState extends State<TripDetailPage>
               ),
             ],
           ),
+
+          // NEW: Data quality indicator
+          if (trip.hasLimitedData) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.amber[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.amber[700], size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      trip.dataQualityMessage ?? 'Some data may be limited for this area.',
+                      style: TextStyle(fontSize: 11, color: Colors.amber[900]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           if (trip.totalEstimatedBudgetMYR != null) ...[
             const SizedBox(height: 12),
             Container(
@@ -447,6 +527,33 @@ class _TripDetailPageState extends State<TripDetailPage>
               ),
             ),
           ],
+
+          // NEW: Display trip styles/destination types
+          if (trip.destinationTypes != null && trip.destinationTypes!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: trip.destinationTypes!.map((type) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _getTypeDisplay(type),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.blue[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+
           if (trip.features != null) ...[
             const SizedBox(height: 12),
             Wrap(
@@ -477,5 +584,18 @@ class _TripDetailPageState extends State<TripDetailPage>
         ],
       ),
     );
+  }
+
+  // NEW: Helper to get type display with emoji
+  String _getTypeDisplay(String type) {
+    const typeDisplay = {
+      'relaxing': '🏖️ Relaxing',
+      'historical': '🏛️ Historical',
+      'adventure': '🎢 Adventure',
+      'shopping': '🛍️ Shopping',
+      'spiritual': '⛩️ Spiritual',
+      'entertainment': '🎭 Entertainment',
+    };
+    return typeDisplay[type.toLowerCase()] ?? type;
   }
 }

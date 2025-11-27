@@ -1,16 +1,42 @@
 """
-Destination Service - Find nearby attractions
-Better categorization and Google Maps links
+Destination Service - FIXED FOR TIMEOUTS
+✅ Multiple Overpass servers with fast failover
+✅ Shorter timeouts (15s instead of 30s)
+✅ Simpler, faster queries
+✅ Excludes hotels from results
+✅ Works for any city
 """
 
 import requests
 import time
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 import random
 import hashlib
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
+
+# More servers for better reliability
+OVERPASS_SERVERS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+]
+
+# Shorter timeouts to fail fast
+REQUEST_TIMEOUT = 15
+QUERY_TIMEOUT = 12
+
+# Hotels to exclude
+EXCLUDE_TYPES = ['hotel', 'hostel', 'guest_house', 'motel', 'apartment', 'camp_site']
+
+DEFAULT_WEIGHTS = {
+    'museum': 1.0, 'entertainment': 1.0, 'viewpoint': 1.0,
+    'park': 1.0, 'nature': 1.0, 'cultural': 1.0,
+    'temple': 1.0, 'shopping': 1.0, 'attraction': 1.0,
+}
 
 
 def get_destinations_near_location(
@@ -18,274 +44,242 @@ def get_destinations_near_location(
     country: str,
     lat: float,
     lon: float,
-    count: int = 100
+    count: int = 100,
+    category_weights: Dict[str, float] = None,
+    preferred_categories: List[str] = None
 ) -> List[Dict]:
-    """
-    Get real destinations from OpenStreetMap near a specific location
+    """Get destinations with fast failover"""
 
-    IMPROVED: Better Google Maps links, diverse categories
-    """
+    if category_weights is None:
+        category_weights = DEFAULT_WEIGHTS.copy()
+    if preferred_categories is None:
+        preferred_categories = list(DEFAULT_WEIGHTS.keys())
 
-    logger.info(f"🔍 Searching destinations near {lat},{lon}")
+    logger.info(f"\n🔍 DESTINATIONS: {city}, {country}")
+    logger.info(f"📍 Coords: ({lat:.4f}, {lon:.4f})")
+    logger.info(f"🎯 Categories: {preferred_categories}")
 
-    destinations = []
+    all_destinations = []
+    seen_ids = set()
 
-    try:
-        overpass_url = "https://overpass-api.de/api/interpreter"
-        search_radius = 10000  # 10km
+    # Try increasing radii
+    for radius in [2000, 5000, 10000]:
+        logger.info(f"\n📡 Radius: {radius}m")
 
-        # Comprehensive query for various attraction types
-        query = f"""
-        [out:json][timeout:45];
-        (
-          // Tourist attractions
-          node["tourism"~"attraction|museum|gallery|viewpoint|theme_park|zoo|aquarium|artwork"](around:{search_radius},{lat},{lon});
-          way["tourism"~"attraction|museum|gallery|viewpoint|theme_park|zoo|aquarium"](around:{search_radius},{lat},{lon});
+        # Simple combined query for all types
+        destinations = _fetch_all_attractions(lat, lon, radius, city, country)
 
-          // Historical & cultural
-          node["historic"~"castle|monument|memorial|archaeological_site|ruins|fort|palace"](around:{search_radius},{lat},{lon});
-          way["historic"~"castle|monument|memorial|archaeological_site|ruins|fort|palace"](around:{search_radius},{lat},{lon});
+        for dest in destinations:
+            if dest['osm_id'] not in seen_ids:
+                seen_ids.add(dest['osm_id'])
+                all_destinations.append(dest)
 
-          // Nature & parks
-          node["leisure"~"park|garden|nature_reserve"](around:{search_radius},{lat},{lon});
-          way["leisure"~"park|garden|nature_reserve"](around:{search_radius},{lat},{lon});
+        logger.info(f"   Found: {len(destinations)} (total: {len(all_destinations)})")
 
-          // Places of worship (temples, shrines, churches)
-          node["amenity"="place_of_worship"]["religion"](around:{search_radius},{lat},{lon});
-          way["amenity"="place_of_worship"]["religion"](around:{search_radius},{lat},{lon});
+        if len(all_destinations) >= 20:
+            break
 
-          // Shopping & markets
-          node["shop"="mall"](around:{search_radius},{lat},{lon});
-          way["shop"="mall"](around:{search_radius},{lat},{lon});
-          node["amenity"="marketplace"](around:{search_radius},{lat},{lon});
+        time.sleep(0.5)
 
-          // Entertainment
-          node["amenity"~"theatre|cinema|arts_centre"](around:{search_radius},{lat},{lon});
-          way["amenity"~"theatre|cinema|arts_centre"](around:{search_radius},{lat},{lon});
-        );
-        out center 150;
-        """
+    if not all_destinations:
+        logger.warning("⚠️ No destinations found")
+        return []
 
-        response = requests.post(overpass_url, data={'data': query}, timeout=60)
+    # Assign categories and scores
+    for dest in all_destinations:
+        cat = _infer_category(dest.get('tags', {}))
+        dest['category'] = cat
 
-        if response.status_code == 200:
-            data = response.json()
-            elements = data.get('elements', [])
+        weight = category_weights.get(cat, 0.5)
+        if cat in preferred_categories:
+            weight = min(weight * 1.5, 1.0)
+            dest['is_preferred'] = True
+        else:
+            dest['is_preferred'] = False
 
-            logger.info(f"🏛️ Found {len(elements)} potential destinations")
+        dest['preference_score'] = round(weight * (dest.get('rating', 4.0) / 5.0), 3)
 
-            for element in elements:
-                try:
-                    osm_id = str(element.get('id', ''))
-                    tags = element.get('tags', {})
+    # Sort by preference
+    all_destinations.sort(key=lambda x: -x.get('preference_score', 0))
 
-                    # Get name - prefer English
-                    name = tags.get('name:en') or tags.get('name') or tags.get('official_name')
-                    if not name or len(name) < 3:
-                        continue
+    logger.info(f"✅ Returning {min(len(all_destinations), count)} destinations")
 
-                    # Get coordinates
-                    if element.get('type') == 'node':
-                        dest_lat = element.get('lat')
-                        dest_lon = element.get('lon')
-                    else:
-                        center = element.get('center', {})
-                        dest_lat = center.get('lat')
-                        dest_lon = center.get('lon')
+    return all_destinations[:count]
 
-                    if not dest_lat or not dest_lon:
-                        continue
 
-                    # Determine category
-                    category = _determine_category(tags)
+def _fetch_all_attractions(lat: float, lon: float, radius: int, city: str, country: str) -> List[Dict]:
+    """Fetch attractions with a simple combined query"""
 
-                    # Get address
-                    address = _build_address(tags, city, country)
+    # Build exclusion for hotels
+    exclude = ''.join([f'["tourism"!="{t}"]' for t in EXCLUDE_TYPES])
 
-                    # Contact info
-                    phone = tags.get('phone', tags.get('contact:phone', ''))
-                    website = tags.get('website', tags.get('contact:website', ''))
+    # Simple query that catches most attractions
+    query = f'''
+[out:json][timeout:{QUERY_TIMEOUT}];
+(
+  node["tourism"]["name"]{exclude}(around:{radius},{lat},{lon});
+  node["leisure"~"park|garden"]["name"](around:{radius},{lat},{lon});
+  node["amenity"="place_of_worship"]["name"](around:{radius},{lat},{lon});
+  node["historic"]["name"](around:{radius},{lat},{lon});
+);
+out 50;
+'''
 
-                    # Opening hours
-                    opening_hours = tags.get('opening_hours', 'Check official website')
+    return _execute_query(query, city, country)
 
-                    # Check if outdoor
-                    is_outdoor = category in ['park', 'nature', 'cultural', 'temple']
 
-                    # Calculate distance
-                    distance_km = _calculate_distance(lat, lon, dest_lat, dest_lon)
+def _execute_query(query: str, city: str, country: str) -> List[Dict]:
+    """Execute query with fast server failover"""
 
-                    # Estimate entrance fee
-                    estimated_fee = _estimate_entrance_fee(category, country)
+    for i, server in enumerate(OVERPASS_SERVERS):
+        try:
+            logger.info(f"   Server {i+1}/{len(OVERPASS_SERVERS)}: {server.split('/')[2][:20]}")
 
-                    # Generate unique ID
-                    dest_id = hashlib.md5(f"{osm_id}_{name}_{city}".encode()).hexdigest()[:16]
+            response = requests.post(
+                server,
+                data=query,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                timeout=REQUEST_TIMEOUT
+            )
 
-                    # IMPROVED: Better Google Maps link
-                    encoded_name = requests.utils.quote(name)
-                    maps_link = f"https://www.google.com/maps/search/?api=1&query={encoded_name}+{dest_lat},{dest_lon}"
+            if response.status_code == 200:
+                data = response.json()
+                elements = data.get('elements', [])
+                logger.info(f"   ✓ Got {len(elements)} elements")
+                return _parse_elements(elements, city, country)
 
-                    destination = {
-                        'id': dest_id,
-                        'osm_id': osm_id,
-                        'name': name,
-                        'city': city,
-                        'country': country,
-                        'category': category,
-                        'rating': round(random.uniform(4.0, 4.8), 1),
-                        'popularity': round(random.uniform(3.8, 4.8), 1),
-                        'duration_hours': 2.0,
-                        'avg_cost': estimated_fee,
-                        'description': tags.get('description') or _generate_description(name, category),
-                        'opening_hours': opening_hours,
-                        'best_time_to_visit': 'Morning (09:00-11:00)',
-                        'tips': _generate_tips(category),
-                        'facilities': _generate_facilities(tags),
-                        'is_outdoor': is_outdoor,
-                        'highlights': [name],
-                        'accessibility': tags.get('wheelchair', 'Check on arrival'),
-                        'address': address,
-                        'phone': phone,
-                        'website': website,
-                        'coordinates': {
-                            'lat': dest_lat,
-                            'lng': dest_lon
-                        },
-                        'distance_km': round(distance_km, 2),
-                        'maps_link': maps_link,
-                        'osm_link': f"https://www.openstreetmap.org/{element.get('type', 'node')}/{osm_id}",
-                        'data_source': 'OpenStreetMap',
-                    }
+            elif response.status_code in [429, 503, 504]:
+                logger.info(f"   Server busy ({response.status_code}), trying next...")
+                continue
+            else:
+                logger.info(f"   Status {response.status_code}, trying next...")
+                continue
 
-                    destinations.append(destination)
+        except requests.exceptions.Timeout:
+            logger.info(f"   Timeout, trying next...")
+            continue
+        except Exception as e:
+            logger.info(f"   Error: {str(e)[:50]}, trying next...")
+            continue
 
-                except Exception as e:
-                    logger.warning(f"Error processing destination: {e}")
+    logger.warning("   All servers failed")
+    return []
+
+
+def _parse_elements(elements: List[Dict], city: str, country: str) -> List[Dict]:
+    """Parse OSM elements into destination format"""
+
+    places = []
+
+    for el in elements:
+        try:
+            tags = el.get('tags', {})
+
+            # Get name
+            name = tags.get('name:en') or tags.get('name') or tags.get('int_name')
+            if not name or len(name) < 2:
+                continue
+
+            # Skip hotels
+            tourism = tags.get('tourism', '').lower()
+            if tourism in EXCLUDE_TYPES:
+                continue
+
+            # Skip if name contains hotel keywords
+            if any(h in name.lower() for h in ['hotel', 'hostel', 'inn', 'motel', 'resort']):
+                if not tags.get('historic'):
                     continue
 
-        time.sleep(2)
+            # Get coordinates
+            lat = el.get('lat')
+            lon = el.get('lon')
+            if not lat or not lon:
+                continue
 
-    except Exception as e:
-        logger.error(f"❌ Destination search error: {e}")
+            osm_id = str(el.get('id', ''))
 
-    # Sort by distance
-    destinations.sort(key=lambda x: x['distance_km'])
+            # Google Maps link with name
+            encoded = quote(f"{name} {city}")
+            maps_link = f"https://www.google.com/maps/search/?api=1&query={encoded}"
 
-    logger.info(f"✅ Returning {len(destinations)} destinations")
-    return destinations[:count]
+            places.append({
+                'id': hashlib.md5(f"{osm_id}_{name}".encode()).hexdigest()[:16],
+                'osm_id': osm_id,
+                'name': name.strip(),
+                'name_local': tags.get('name'),
+                'city': city,
+                'country': country,
+                'category': 'attraction',
+                'rating': round(random.uniform(4.0, 4.8), 1),
+                'avg_cost': _estimate_cost(country),
+                'duration_hours': 1.5,
+                'description': f"{name} is a popular attraction in {city}.",
+                'opening_hours': tags.get('opening_hours', 'Check website'),
+                'tips': ['Arrive early', 'Check hours before visiting'],
+                'address': _build_address(tags, city),
+                'website': tags.get('website', ''),
+                'phone': tags.get('phone', ''),
+                'coordinates': {'lat': lat, 'lng': lon},
+                'maps_link': maps_link,
+                'maps_link_direct': f"https://www.google.com/maps?q={lat},{lon}",
+                'tags': tags,
+                'data_source': 'OpenStreetMap',
+            })
+
+        except Exception:
+            continue
+
+    return places
 
 
-def _determine_category(tags: Dict) -> str:
-    """Determine destination category from OSM tags"""
+def _infer_category(tags: Dict) -> str:
+    """Infer category from OSM tags"""
 
-    if tags.get('tourism') == 'museum':
+    tourism = tags.get('tourism', '')
+    leisure = tags.get('leisure', '')
+    amenity = tags.get('amenity', '')
+    historic = tags.get('historic', '')
+
+    if tourism == 'museum':
         return 'museum'
-    elif tags.get('tourism') in ['theme_park', 'zoo', 'aquarium']:
-        return 'entertainment'
-    elif tags.get('tourism') == 'viewpoint':
+    elif tourism == 'viewpoint':
         return 'viewpoint'
-    elif tags.get('leisure') in ['park', 'garden']:
-        return 'park'
-    elif tags.get('leisure') == 'nature_reserve':
-        return 'nature'
-    elif tags.get('historic'):
-        return 'cultural'
-    elif tags.get('amenity') == 'place_of_worship':
-        return 'temple'
-    elif tags.get('shop') == 'mall' or tags.get('amenity') == 'marketplace':
-        return 'shopping'
-    elif tags.get('amenity') in ['theatre', 'cinema', 'arts_centre']:
+    elif tourism in ['theme_park', 'zoo', 'aquarium']:
         return 'entertainment'
+    elif leisure in ['park', 'garden', 'nature_reserve']:
+        return 'park'
+    elif amenity == 'place_of_worship':
+        return 'temple'
+    elif historic:
+        return 'cultural'
+    elif tags.get('shop'):
+        return 'shopping'
     else:
         return 'attraction'
 
 
-def _build_address(tags: Dict, city: str, country: str) -> str:
-    """Build address from OSM tags"""
-
+def _build_address(tags: Dict, city: str) -> str:
+    """Build address from tags"""
     parts = []
-    if tags.get('addr:housenumber') and tags.get('addr:street'):
-        parts.append(f"{tags['addr:housenumber']} {tags['addr:street']}")
-    elif tags.get('addr:street'):
-        parts.append(tags['addr:street'])
-
-    if tags.get('addr:city'):
-        parts.append(tags['addr:city'])
-    elif city:
-        parts.append(city)
-
-    return ', '.join(parts) if parts else f"{city}, {country}"
+    if tags.get('addr:street'):
+        street = tags['addr:street']
+        if tags.get('addr:housenumber'):
+            street = f"{tags['addr:housenumber']} {street}"
+        parts.append(street)
+    parts.append(city)
+    return ', '.join(parts)
 
 
-def _estimate_entrance_fee(category: str, country: str) -> float:
-    """Estimate entrance fee in MYR"""
-
-    multipliers = {
-        'Japan': 2.5, 'USA': 2.8, 'Thailand': 0.9,
-        'Singapore': 2.4, 'Malaysia': 1.0,
+def _estimate_cost(country: str) -> float:
+    """Estimate entrance cost"""
+    costs = {
+        'japan': 50, 'usa': 60, 'singapore': 45, 'thailand': 15,
+        'malaysia': 20, 'indonesia': 12, 'vietnam': 10, 'korea': 35,
+        'china': 25, 'uk': 50, 'france': 45,
     }
 
-    base_fees = {
-        'museum': 25, 'attraction': 30, 'entertainment': 50,
-        'temple': 10, 'cultural': 20, 'park': 0,
-        'shopping': 0, 'viewpoint': 15, 'nature': 10,
-    }
+    for key, cost in costs.items():
+        if key in country.lower():
+            return round(cost * random.uniform(0.8, 1.2), 2)
 
-    base = base_fees.get(category, 20)
-    multiplier = multipliers.get(country, 1.5)
-
-    return round(base * multiplier * random.uniform(0.8, 1.2), 2)
-
-
-def _generate_description(name: str, category: str) -> str:
-    """Generate a basic description"""
-    descriptions = {
-        'museum': f"{name} offers a fascinating collection of exhibits and historical artifacts.",
-        'park': f"{name} is a beautiful green space perfect for relaxation and outdoor activities.",
-        'temple': f"{name} is a significant place of worship with stunning architecture.",
-        'cultural': f"{name} is an important historical landmark with rich cultural heritage.",
-        'shopping': f"{name} offers a wide variety of shops and dining options.",
-        'entertainment': f"{name} provides exciting entertainment for all ages.",
-    }
-    return descriptions.get(category, f"A popular {category} in the area.")
-
-
-def _generate_tips(category: str) -> List[str]:
-    """Generate helpful tips based on category"""
-
-    tips_map = {
-        'museum': ['Book tickets online', 'Visit on weekdays', 'Allow 2-3 hours'],
-        'park': ['Best visited in morning', 'Bring water', 'Wear comfortable shoes'],
-        'temple': ['Dress modestly', 'Remove shoes', 'Be respectful'],
-        'shopping': ['Bargaining is common', 'Cash accepted', 'Peak hours are 2-8 PM'],
-    }
-
-    return tips_map.get(category, ['Arrive early', 'Check opening hours'])
-
-
-def _generate_facilities(tags: Dict) -> List[str]:
-    """Extract facilities from tags"""
-
-    facilities = []
-    if tags.get('toilets') == 'yes':
-        facilities.append('Restrooms')
-    if tags.get('wheelchair') == 'yes':
-        facilities.append('Wheelchair accessible')
-    if tags.get('wifi') == 'yes' or tags.get('internet_access') == 'yes':
-        facilities.append('WiFi')
-    if not facilities:
-        facilities = ['Check on arrival']
-
-    return facilities
-
-
-def _calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculate distance using Haversine formula"""
-    from math import radians, cos, sin, asin, sqrt
-
-    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * asin(sqrt(a))
-    return c * 6371
+    return round(30 * random.uniform(0.8, 1.2), 2)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../controller/userAuth.dart';
+import '../controller/auth_wrapper.dart'; // ADD THIS
 import '../utilities/validators.dart';
 import '../widget/custom_text_field.dart';
 
@@ -14,6 +15,7 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
+  final AuthWrapper _authWrapper = AuthWrapper(); // ADD THIS
 
   String _email = '';
   String _password = '';
@@ -77,7 +79,7 @@ class _LoginPageState extends State<LoginPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {  // ✅ Renamed to dialogContext
         return Dialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -103,7 +105,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 20),
                 Text(
                   isSuccess ? 'Login Successful' : 'Login Failed',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(dialogContext).textTheme.titleLarge,  // ✅ Use dialogContext for theme
                   textAlign: TextAlign.center,
                 ),
                 if (!isSuccess && errorMessage != null)
@@ -111,7 +113,7 @@ class _LoginPageState extends State<LoginPage> {
                     padding: const EdgeInsets.only(top: 12.0),
                     child: Text(
                       errorMessage,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: Theme.of(dialogContext).textTheme.bodyMedium,  // ✅ Use dialogContext
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -119,14 +121,21 @@ class _LoginPageState extends State<LoginPage> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
+                    onPressed: () async {
+                      Navigator.of(dialogContext).pop();  // ✅ Close dialog using dialogContext
+
                       if (isSuccess) {
-                        Navigator.pushNamedAndRemoveUntil(
-                          context,
-                          '/home',
-                              (route) => false,
-                        );
+                        // ✅ Now use the LoginPage's context (via mounted check)
+                        if (mounted) {
+                          String route = await _authWrapper.determineInitialRoute();
+                          if (mounted) {  // ✅ Check again after async call
+                            Navigator.pushNamedAndRemoveUntil(
+                              context,  // ✅ This is LoginPage's context, not dialog's
+                              route,
+                                  (route) => false,
+                            );
+                          }
+                        }
                       }
                     },
                     child: Text(isSuccess ? 'Continue' : 'Try Again'),

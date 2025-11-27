@@ -1,4 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:wandry/screen/admin_feedback_page.dart';
+import 'package:wandry/screen/admin_users_page.dart';
 import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'widget/theme.dart';
@@ -7,6 +9,9 @@ import 'screen/login_page.dart';
 import 'screen/register_page.dart';
 import 'screen/forget_password_page.dart';
 import 'screen/home_page.dart';
+import 'screen/admin_dashboard.dart'; // ADD THIS
+import 'package:wandry/screen/admin_settings_page.dart';
+import 'package:wandry/screen/admin_reports_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,13 +30,18 @@ class MyApp extends StatelessWidget {
       title: 'Wandry - Personalized Trip Planner',
       debugShowCheckedModeBanner: false,
       theme: AppTheme,
-      initialRoute: '/welcome', // Start with welcome page
+      initialRoute: '/welcome',
       routes: {
         '/welcome': (context) => WelcomePage(),
         '/login': (context) => LoginPage(),
         '/register': (context) => RegisterPage(),
         '/forgot-password': (context) => ForgotPasswordPage(),
         '/home': (context) => HomePage(),
+        '/admin-dashboard': (context) => const AdminDashboard(),
+        '/admin-users': (context) => const AdminUsersPage(),        // ADD THIS
+        '/admin-feedback': (context) => const AdminFeedbackPage(),
+        '/admin-reports': (context) => const AdminReportsPage(),
+        '/admin-settings': (context) => const AdminSettingsPage(),
       },
     );
   }
