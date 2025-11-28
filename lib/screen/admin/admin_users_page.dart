@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../controller/admin_service.dart';
+import '../../controller/admin_service.dart';
+import '../../controller/theme_controller.dart';
+import '../../widget/sweet_alert_dialog.dart';
 
-/// AdminUsersPage - User management screen
-/// Place this in lib/screen/admin_users_page.dart
+/// AdminUsersPage - Enhanced user management screen (FIXED OVERFLOW)
+/// Place this in lib/screen/admin/admin_users_page.dart
 class AdminUsersPage extends StatefulWidget {
   const AdminUsersPage({super.key});
 
@@ -15,6 +17,7 @@ class AdminUsersPage extends StatefulWidget {
 class _AdminUsersPageState extends State<AdminUsersPage>
     with SingleTickerProviderStateMixin {
   final AdminService _adminService = AdminService();
+  final ThemeController _themeController = ThemeController();
   late TabController _tabController;
 
   List<Map<String, dynamic>> _users = [];
@@ -26,13 +29,21 @@ class _AdminUsersPageState extends State<AdminUsersPage>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadUsers();
+    _themeController.addListener(_onThemeChanged);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _themeController.removeListener(_onThemeChanged);
     super.dispose();
   }
+
+  void _onThemeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  ThemeController get tc => _themeController;
 
   Future<void> _loadUsers() async {
     setState(() {
@@ -51,94 +62,37 @@ class _AdminUsersPageState extends State<AdminUsersPage>
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_adminService.getErrorMessage(e)),
-            backgroundColor: Colors.red,
-          ),
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Failed to Load',
+          subtitle: _adminService.getErrorMessage(e),
         );
       }
     }
   }
 
   Future<void> _deleteUser(Map<String, dynamic> user) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await SweetAlertDialog.confirm(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.warning_amber_rounded, color: Colors.red),
-            ),
-            const SizedBox(width: 12),
-            const Text('Delete User'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to delete this user?',
-              style: TextStyle(color: Colors.grey[800]),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user['email'] ?? 'Unknown',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    'Role: ${user['role'] ?? 'Unknown'}',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'This action cannot be undone.',
-              style: TextStyle(color: Colors.red[400], fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      title: 'Delete User',
+      subtitle: 'Are you sure you want to delete "${user['email']}"?\n\nThis action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
     );
 
     if (confirm == true) {
-      // Show loading
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
+        builder: (context) => Center(
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: tc.cardColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const CircularProgressIndicator(),
+          ),
         ),
       );
 
@@ -149,23 +103,21 @@ class _AdminUsersPageState extends State<AdminUsersPage>
         );
 
         if (mounted) {
-          Navigator.pop(context); // Close loading
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('User deleted successfully'),
-              backgroundColor: Colors.green,
-            ),
+          Navigator.pop(context);
+          SweetAlertDialog.success(
+            context: context,
+            title: 'User Deleted',
+            subtitle: 'The user has been successfully removed.',
           );
           _loadUsers();
         }
       } catch (e) {
         if (mounted) {
-          Navigator.pop(context); // Close loading
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_adminService.getErrorMessage(e)),
-              backgroundColor: Colors.red,
-            ),
+          Navigator.pop(context);
+          SweetAlertDialog.error(
+            context: context,
+            title: 'Delete Failed',
+            subtitle: _adminService.getErrorMessage(e),
           );
         }
       }
@@ -175,7 +127,6 @@ class _AdminUsersPageState extends State<AdminUsersPage>
   List<Map<String, dynamic>> get _filteredUsers {
     List<Map<String, dynamic>> filtered = _users;
 
-    // Filter by search query
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((user) {
         final email = user['email']?.toString().toLowerCase() ?? '';
@@ -192,31 +143,42 @@ class _AdminUsersPageState extends State<AdminUsersPage>
   }
 
   List<Map<String, dynamic>> get _allUsers => _filteredUsers;
-
   List<Map<String, dynamic>> get _customerUsers =>
       _filteredUsers.where((u) => u['role'] == 'Customer').toList();
-
   List<Map<String, dynamic>> get _adminUsers =>
       _filteredUsers.where((u) => u['role'] == 'Admin').toList();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: tc.backgroundColor,
       appBar: AppBar(
-        title: const Text('User Management'),
-        backgroundColor: const Color(0xFFB3D9E8),
+        title: Text(
+          'User Management',
+          style: TextStyle(color: tc.appBarForegroundColor),
+        ),
+        backgroundColor: tc.appBarColor,
+        iconTheme: IconThemeData(color: tc.appBarForegroundColor),
         elevation: 0,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.black87,
-          unselectedLabelColor: Colors.black54,
-          tabs: [
-            Tab(text: 'All (${_allUsers.length})'),
-            Tab(text: 'Customers (${_customerUsers.length})'),
-            Tab(text: 'Admins (${_adminUsers.length})'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Container(
+            color: tc.appBarColor,
+            child: TabBar(
+              controller: _tabController,
+              indicatorColor: tc.isDarkMode ? Colors.blue[400] : Colors.blue[700],
+              indicatorWeight: 3,
+              labelColor: tc.appBarForegroundColor,
+              unselectedLabelColor: tc.appBarForegroundColor.withOpacity(0.6),
+              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 13),
+              tabs: [
+                Tab(text: 'All (${_allUsers.length})'),
+                Tab(text: 'Customers (${_customerUsers.length})'),
+                Tab(text: 'Admins (${_adminUsers.length})'),
+              ],
+            ),
+          ),
         ),
         actions: [
           IconButton(
@@ -226,56 +188,61 @@ class _AdminUsersPageState extends State<AdminUsersPage>
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search Bar
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search by email, user ID, or role...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    setState(() {
-                      _searchQuery = '';
-                    });
-                  },
-                )
-                    : null,
-                filled: true,
-                fillColor: Colors.grey[100],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+      body: Container(
+        color: tc.backgroundColor,
+        child: Column(
+          children: [
+            // Search Bar
+            Container(
+              color: tc.cardColor,
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                style: TextStyle(color: tc.textColor),
+                decoration: InputDecoration(
+                  hintText: 'Search by email, user ID, or role...',
+                  hintStyle: TextStyle(color: tc.hintColor),
+                  prefixIcon: Icon(Icons.search, color: tc.iconColor),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                    icon: Icon(Icons.clear, color: tc.iconColor),
+                    onPressed: () {
+                      setState(() {
+                        _searchQuery = '';
+                      });
+                    },
+                  )
+                      : null,
+                  filled: true,
+                  fillColor: tc.inputFillColor,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value;
+                  });
+                },
               ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
             ),
-          ),
 
-          // Tab Content
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildUserList(_allUsers),
-                _buildUserList(_customerUsers),
-                _buildUserList(_adminUsers),
-              ],
+            // Tab Content
+            Expanded(
+              child: _isLoading
+                  ? Center(child: CircularProgressIndicator(color: Colors.blue[600]))
+                  : TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildUserList(_allUsers),
+                  _buildUserList(_customerUsers),
+                  _buildUserList(_adminUsers),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -286,13 +253,20 @@ class _AdminUsersPageState extends State<AdminUsersPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.people_outline, size: 80, color: Colors.grey[300]),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: tc.cardColor,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.people_outline, size: 48, color: tc.iconColor),
+            ),
             const SizedBox(height: 16),
             Text(
               'No users found',
               style: TextStyle(
                 fontSize: 18,
-                color: Colors.grey[600],
+                color: tc.textColor,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -301,7 +275,7 @@ class _AdminUsersPageState extends State<AdminUsersPage>
               _searchQuery.isNotEmpty
                   ? 'Try a different search term'
                   : 'Users will appear here',
-              style: TextStyle(color: Colors.grey[500]),
+              style: tc.subtitleStyle(),
             ),
           ],
         ),
@@ -353,192 +327,160 @@ class _AdminUsersPageState extends State<AdminUsersPage>
     final isAdmin = role == 'Admin';
     final roleColor = isAdmin ? Colors.orange : Colors.blue;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey[200]!),
-      ),
-      child: InkWell(
-        onTap: () => _showUserDetails(user),
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  // Avatar
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: isAdmin
-                            ? [Colors.orange[300]!, Colors.orange[500]!]
-                            : [Colors.blue[300]!, Colors.blue[500]!],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Center(
-                      child: Text(
-                        avatarLetter ?? '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-
-                  // Info
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          email,
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 13,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  // Role Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: roleColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isAdmin
-                              ? Icons.admin_panel_settings
-                              : Icons.person,
-                          size: 12,
-                          color: roleColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          role,
-                          style: TextStyle(
-                            color: roleColor,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-              Divider(color: Colors.grey[200], height: 1),
-              const SizedBox(height: 12),
-
-              // Stats Row - FIXED OVERFLOW with Flexible/Expanded
-              Row(
-                children: [
-                  // Info chips - wrapped in Flexible to prevent overflow
-                  Flexible(
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        _buildInfoChip(Icons.badge_outlined, userId),
-                        _buildInfoChip(Icons.calendar_today_outlined, regDate),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Action Buttons - fixed size
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: IconButton(
-                          onPressed: () => _showUserDetails(user),
-                          icon: const Icon(Icons.visibility_outlined, size: 18),
-                          color: Colors.blue,
-                          tooltip: 'View Details',
-                          padding: EdgeInsets.zero,
-                        ),
-                      ),
-                      SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: IconButton(
-                          onPressed: () => _deleteUser(user),
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          color: Colors.red,
-                          tooltip: 'Delete User',
-                          padding: EdgeInsets.zero,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoChip(IconData icon, String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(6),
+        color: tc.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: tc.borderColor),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: Colors.grey[600]),
-          const SizedBox(width: 4),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 100),
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey[700],
-              ),
-              overflow: TextOverflow.ellipsis,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showUserDetails(user),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // Top Row: Avatar, Name, Email, Role Badge
+                Row(
+                  children: [
+                    // Avatar
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isAdmin
+                              ? [Colors.orange[300]!, Colors.orange[500]!]
+                              : [Colors.blue[300]!, Colors.blue[500]!],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Center(
+                        child: Text(
+                          avatarLetter ?? '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // Name & Email
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: tc.textColor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            email,
+                            style: tc.subtitleStyle(fontSize: 13),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Role Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: roleColor.withOpacity(tc.isDarkMode ? 0.2 : 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isAdmin ? Icons.admin_panel_settings : Icons.person,
+                            size: 12,
+                            color: roleColor,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            role,
+                            style: TextStyle(
+                              color: roleColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // Bottom Row: User ID, Date, Actions (FIXED OVERFLOW)
+                Row(
+                  children: [
+                    // User ID
+                    Icon(Icons.badge_outlined, size: 14, color: tc.iconColor),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        userId,
+                        style: TextStyle(fontSize: 11, color: tc.subtitleColor),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // Date
+                    Icon(Icons.calendar_today_outlined, size: 14, color: tc.iconColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      regDate,
+                      style: TextStyle(fontSize: 11, color: tc.subtitleColor),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // Action Buttons
+                    InkWell(
+                      onTap: () => _showUserDetails(user),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(Icons.visibility_outlined, size: 18, color: Colors.blue[600]),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => _deleteUser(user),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(Icons.delete_outline, size: 18, color: Colors.red[600]),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -554,9 +496,9 @@ class _AdminUsersPageState extends State<AdminUsersPage>
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.75,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: tc.cardColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           children: [
@@ -566,7 +508,7 @@ class _AdminUsersPageState extends State<AdminUsersPage>
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey[300],
+                color: tc.dividerColor,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -602,21 +544,18 @@ class _AdminUsersPageState extends State<AdminUsersPage>
                       children: [
                         Text(
                           'User Details',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: tc.titleStyle(fontSize: 20),
                         ),
                         Text(
                           user['email'] ?? 'No email',
-                          style: TextStyle(color: Colors.grey[600]),
+                          style: tc.subtitleStyle(),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
                   Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: roleColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -633,7 +572,7 @@ class _AdminUsersPageState extends State<AdminUsersPage>
               ),
             ),
 
-            Divider(color: Colors.grey[200]),
+            Divider(color: tc.dividerColor),
 
             // Content
             Expanded(
@@ -644,8 +583,7 @@ class _AdminUsersPageState extends State<AdminUsersPage>
                   children: [
                     _buildDetailSection('Account Information', [
                       _buildDetailItem('User ID', user['userID'] ?? 'N/A'),
-                      _buildDetailItem(
-                          'Firebase UID', user['firebaseUid'] ?? 'N/A'),
+                      _buildDetailItem('Firebase UID', user['firebaseUid'] ?? 'N/A'),
                       _buildDetailItem('Email', user['email'] ?? 'N/A'),
                       _buildDetailItem('Role', user['role'] ?? 'N/A'),
                     ]),
@@ -691,10 +629,10 @@ class _AdminUsersPageState extends State<AdminUsersPage>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tc.cardColor,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: tc.shadowColor,
                     blurRadius: 10,
                     offset: const Offset(0, -5),
                   ),
@@ -706,6 +644,8 @@ class _AdminUsersPageState extends State<AdminUsersPage>
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(context),
                       style: OutlinedButton.styleFrom(
+                        foregroundColor: tc.textColor,
+                        side: BorderSide(color: tc.borderColor),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -756,20 +696,18 @@ class _AdminUsersPageState extends State<AdminUsersPage>
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: Colors.grey[500],
+            color: tc.subtitleColor,
             letterSpacing: 0.5,
           ),
         ),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
-            color: Colors.grey[50],
+            color: tc.isDarkMode ? Colors.white.withOpacity(0.05) : Colors.grey[50],
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
+            border: Border.all(color: tc.borderColor),
           ),
-          child: Column(
-            children: items,
-          ),
+          child: Column(children: items),
         ),
       ],
     );
@@ -780,7 +718,7 @@ class _AdminUsersPageState extends State<AdminUsersPage>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: Colors.grey[200]!),
+          bottom: BorderSide(color: tc.dividerColor),
         ),
       ),
       child: Row(
@@ -790,18 +728,16 @@ class _AdminUsersPageState extends State<AdminUsersPage>
             width: 110,
             child: Text(
               label,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 13,
-              ),
+              style: tc.subtitleStyle(fontSize: 13),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w500,
                 fontSize: 13,
+                color: tc.textColor,
               ),
             ),
           ),
@@ -812,10 +748,8 @@ class _AdminUsersPageState extends State<AdminUsersPage>
 
   String _formatFieldName(String fieldName) {
     return fieldName
-        .replaceAllMapped(
-        RegExp(r'([A-Z])'), (match) => ' ${match.group(0)}')
-        .replaceFirstMapped(
-        RegExp(r'^.'), (match) => match.group(0)!.toUpperCase())
+        .replaceAllMapped(RegExp(r'([A-Z])'), (match) => ' ${match.group(0)}')
+        .replaceFirstMapped(RegExp(r'^.'), (match) => match.group(0)!.toUpperCase())
         .trim();
   }
 

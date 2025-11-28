@@ -1,11 +1,12 @@
 // lib/controller/itinerary_edit_controller.dart
-// Handles editing operations for itinerary items
+// COMPLETE VERSION: Handles editing operations for itinerary items
+// Includes: Replace, Skip, Extend/Shorten time, Add note, REORDER
 
 import 'dart:async';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:math';
 
 class ItineraryEditController {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -23,8 +24,294 @@ class ItineraryEditController {
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   ];
 
+  // ============================================
+  // REORDER FUNCTIONALITY (NEW)
+  // ============================================
+
+  /// Reorder items within a day
+  /// Updates orderInDay and recalculates travel times
+  Future<bool> reorderItems({
+    required String tripId,
+    required int dayNumber,
+    required List<String> itemIds, // New order of item IDs
+  }) async {
+    onLoadingChanged?.call(true);
+
+    try {
+      // 1. Fetch all items for this day
+      final itemDocs = await Future.wait(
+        itemIds.map((id) => _firestore.collection('itineraryItem').doc(id).get()),
+      );
+
+      // 2. Validate all items exist and belong to this trip/day
+      for (int i = 0; i < itemDocs.length; i++) {
+        if (!itemDocs[i].exists) {
+          throw Exception('Item not found: ${itemIds[i]}');
+        }
+        final data = itemDocs[i].data()!;
+        if (data['tripID'] != tripId || data['dayNumber'] != dayNumber) {
+          throw Exception('Item does not belong to this day');
+        }
+      }
+
+      // 3. Build ordered list of items with their data
+      final orderedItems = <Map<String, dynamic>>[];
+      for (int i = 0; i < itemDocs.length; i++) {
+        final doc = itemDocs[i];
+        final data = doc.data()!;
+        orderedItems.add({
+          'id': doc.id,
+          'data': data,
+          'newOrder': i,
+        });
+      }
+
+      // 4. Separate meals from attractions
+      // Meals should maintain their original time slots
+      final meals = <Map<String, dynamic>>[];
+      final attractions = <Map<String, dynamic>>[];
+
+      for (var item in orderedItems) {
+        final category = (item['data']['category'] as String? ?? '').toLowerCase();
+        if (['breakfast', 'lunch', 'dinner', 'meal', 'cafe', 'snack'].contains(category)) {
+          meals.add(item);
+        } else {
+          attractions.add(item);
+        }
+      }
+
+      // 5. Calculate new time slots for attractions
+      // Find available time windows between meals
+      final timeWindows = _calculateTimeWindows(meals, orderedItems);
+
+      // 6. Assign new times to attractions based on new order
+      final batch = _firestore.batch();
+
+      int attractionIndex = 0;
+      for (int i = 0; i < orderedItems.length; i++) {
+        final item = orderedItems[i];
+        final docRef = _firestore.collection('itineraryItem').doc(item['id']);
+        final category = (item['data']['category'] as String? ?? '').toLowerCase();
+
+        if (['breakfast', 'lunch', 'dinner', 'meal', 'cafe', 'snack'].contains(category)) {
+          // Meals keep their original times, just update order
+          batch.update(docRef, {
+            'orderInDay': i,
+            'lastModified': FieldValue.serverTimestamp(),
+          });
+        } else {
+          // Attractions get new times based on position
+          final newTimes = _assignAttractionTime(
+            attractionIndex,
+            attractions.length,
+            timeWindows,
+            item['data'],
+          );
+
+          batch.update(docRef, {
+            'orderInDay': i,
+            'startTime': newTimes['startTime'],
+            'endTime': newTimes['endTime'],
+            'isReordered': true,
+            'reorderedAt': FieldValue.serverTimestamp(),
+            'lastModified': FieldValue.serverTimestamp(),
+          });
+
+          attractionIndex++;
+        }
+      }
+
+      // 7. Recalculate distances for all items
+      await _recalculateTravelTimes(tripId, dayNumber, orderedItems, batch);
+
+      // 8. Commit all changes
+      await batch.commit();
+
+      onLoadingChanged?.call(false);
+      onSuccess?.call('Itinerary reordered successfully!');
+      return true;
+    } catch (e) {
+      onLoadingChanged?.call(false);
+      onError?.call('Failed to reorder: ${e.toString()}');
+      return false;
+    }
+  }
+
+  /// Calculate available time windows between meals
+  List<Map<String, String>> _calculateTimeWindows(
+      List<Map<String, dynamic>> meals,
+      List<Map<String, dynamic>> allItems,
+      ) {
+    // Default time windows if no meals found
+    if (meals.isEmpty) {
+      return [
+        {'start': '09:00', 'end': '12:00'},
+        {'start': '14:00', 'end': '18:00'},
+      ];
+    }
+
+    final windows = <Map<String, String>>[];
+
+    // Sort meals by their original order
+    meals.sort((a, b) {
+      final aTime = a['data']['startTime'] as String? ?? '00:00';
+      final bTime = b['data']['startTime'] as String? ?? '00:00';
+      return _timeToMinutes(aTime).compareTo(_timeToMinutes(bTime));
+    });
+
+    // Morning window: 09:00 to first meal
+    final firstMealStart = meals.first['data']['startTime'] as String? ?? '12:00';
+    if (_timeToMinutes(firstMealStart) > _timeToMinutes('09:00')) {
+      windows.add({
+        'start': '09:00',
+        'end': _subtractTime(firstMealStart, 15), // 15 min buffer before meal
+      });
+    }
+
+    // Windows between meals
+    for (int i = 0; i < meals.length - 1; i++) {
+      final currentMealEnd = meals[i]['data']['endTime'] as String? ?? '12:00';
+      final nextMealStart = meals[i + 1]['data']['startTime'] as String? ?? '18:00';
+
+      final windowStart = _addTime(currentMealEnd, 15); // 15 min after meal
+      final windowEnd = _subtractTime(nextMealStart, 15); // 15 min before next meal
+
+      if (_timeToMinutes(windowEnd) > _timeToMinutes(windowStart) + 30) {
+        windows.add({'start': windowStart, 'end': windowEnd});
+      }
+    }
+
+    // Evening window: after last meal to 20:00
+    final lastMealEnd = meals.last['data']['endTime'] as String? ?? '14:00';
+    if (_timeToMinutes('20:00') > _timeToMinutes(lastMealEnd)) {
+      windows.add({
+        'start': _addTime(lastMealEnd, 15),
+        'end': '20:00',
+      });
+    }
+
+    return windows;
+  }
+
+  /// Assign time to an attraction based on its position
+  Map<String, String> _assignAttractionTime(
+      int attractionIndex,
+      int totalAttractions,
+      List<Map<String, String>> timeWindows,
+      Map<String, dynamic> itemData,
+      ) {
+    final duration = (itemData['durationMinutes'] as int?) ?? 60;
+
+    if (timeWindows.isEmpty) {
+      // Fallback: distribute evenly from 09:00 to 18:00
+      final startMinutes = 9 * 60 + (attractionIndex * (9 * 60) ~/ totalAttractions);
+      return {
+        'startTime': _minutesToTime(startMinutes),
+        'endTime': _minutesToTime(startMinutes + duration),
+      };
+    }
+
+    // Calculate total available time
+    int totalAvailableMinutes = 0;
+    for (var window in timeWindows) {
+      totalAvailableMinutes += _timeToMinutes(window['end']!) - _timeToMinutes(window['start']!);
+    }
+
+    // Calculate where this attraction should go
+    final targetPosition = (attractionIndex * totalAvailableMinutes) ~/ totalAttractions;
+
+    // Find which window and position within window
+    int accumulatedMinutes = 0;
+    for (var window in timeWindows) {
+      final windowDuration = _timeToMinutes(window['end']!) - _timeToMinutes(window['start']!);
+
+      if (accumulatedMinutes + windowDuration > targetPosition) {
+        // This attraction goes in this window
+        final positionInWindow = targetPosition - accumulatedMinutes;
+        final startMinutes = _timeToMinutes(window['start']!) + positionInWindow;
+
+        // Ensure we don't exceed window
+        final maxStart = _timeToMinutes(window['end']!) - duration;
+        final actualStart = min(startMinutes, maxStart).toInt();
+        final windowStart = _timeToMinutes(window['start']!);
+
+        return {
+          'startTime': _minutesToTime(max(actualStart, windowStart).toInt()),
+          'endTime': _minutesToTime(max(actualStart, windowStart).toInt() + duration),
+        };
+      }
+
+      accumulatedMinutes += windowDuration;
+    }
+
+    // Fallback: use last window
+    final lastWindow = timeWindows.last;
+    return {
+      'startTime': lastWindow['start']!,
+      'endTime': _minutesToTime(_timeToMinutes(lastWindow['start']!) + duration),
+    };
+  }
+
+  /// Recalculate travel times based on new order
+  Future<void> _recalculateTravelTimes(
+      String tripId,
+      int dayNumber,
+      List<Map<String, dynamic>> orderedItems,
+      WriteBatch batch,
+      ) async {
+    // Get accommodation for starting point
+    Map<String, double>? startCoords;
+    try {
+      final accDoc = await _firestore.collection('accommodation').doc(tripId).get();
+      if (accDoc.exists) {
+        final accData = accDoc.data();
+        if (accData != null && accData['recommendedAccommodation'] != null) {
+          final hotelCoords = accData['recommendedAccommodation']['coordinates'] as Map<String, dynamic>?;
+          if (hotelCoords != null) {
+            startCoords = {
+              'lat': (hotelCoords['lat'] ?? hotelCoords['latitude'] ?? 0).toDouble(),
+              'lng': (hotelCoords['lng'] ?? hotelCoords['longitude'] ?? 0).toDouble(),
+            };
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore accommodation errors
+    }
+
+    double prevLat = startCoords?['lat'] ?? 0;
+    double prevLng = startCoords?['lng'] ?? 0;
+
+    for (int i = 0; i < orderedItems.length; i++) {
+      final item = orderedItems[i];
+      final coords = item['data']['coordinates'] as Map<String, dynamic>?;
+
+      if (coords != null) {
+        final lat = (coords['lat'] ?? 0).toDouble();
+        final lng = (coords['lng'] ?? 0).toDouble();
+
+        if (prevLat != 0 && prevLng != 0 && lat != 0 && lng != 0) {
+          final distance = _calculateDistance(prevLat, prevLng, lat, lng);
+          final travelMinutes = ((distance / 25) * 60 + 10).round();
+
+          final docRef = _firestore.collection('itineraryItem').doc(item['id']);
+          batch.update(docRef, {
+            'distanceKm': double.parse(distance.toStringAsFixed(2)),
+            'estimatedTravelMinutes': travelMinutes,
+          });
+        }
+
+        prevLat = lat;
+        prevLng = lng;
+      }
+    }
+  }
+
+  // ============================================
+  // EXISTING FUNCTIONALITY
+  // ============================================
+
   /// Get nearby alternative attractions for replacing an item
-  /// Returns attractions within specified radius that are NOT in the current itinerary
   Future<List<Map<String, dynamic>>> getNearbyAlternatives({
     required String tripId,
     required String currentItemId,
@@ -48,7 +335,6 @@ class ItineraryEditController {
 
       for (var doc in existingItems.docs) {
         final data = doc.data();
-        // Skip meal items
         if (['breakfast', 'lunch', 'dinner', 'meal'].contains(data['category']?.toString().toLowerCase())) {
           continue;
         }
@@ -91,7 +377,6 @@ class ItineraryEditController {
     required Set<String> excludeNames,
     required int limit,
   }) async {
-    // Build query based on category
     String tourismFilter = _getTourismFilter(category);
 
     final query = '''
@@ -122,11 +407,9 @@ out center $limit;
             final tags = el['tags'] as Map<String, dynamic>? ?? {};
             final name = tags['name:en'] ?? tags['name'] ?? '';
 
-            // Skip if already in itinerary
             if (excludeOsmIds.contains(osmId)) continue;
             if (excludeNames.contains(name.toString().toLowerCase())) continue;
 
-            // Skip hotels
             final tourism = tags['tourism']?.toString().toLowerCase() ?? '';
             if (['hotel', 'hostel', 'guest_house', 'motel'].contains(tourism)) continue;
 
@@ -159,7 +442,6 @@ out center $limit;
             });
           }
 
-          // Sort by distance
           attractions.sort((a, b) =>
               (a['distance_km'] as double).compareTo(b['distance_km'] as double));
 
@@ -230,7 +512,6 @@ out center $limit;
     onLoadingChanged?.call(true);
 
     try {
-      // Get the original item to preserve time slots
       final originalDoc = await _firestore
           .collection('itineraryItem')
           .doc(itemId)
@@ -242,11 +523,9 @@ out center $limit;
 
       final originalData = originalDoc.data()!;
 
-      // Build maps link
       final encodedName = Uri.encodeComponent('${newAttraction['name']} $city');
       final mapsLink = 'https://www.google.com/maps/search/?api=1&query=$encodedName';
 
-      // Update the item with new attraction data
       await _firestore.collection('itineraryItem').doc(itemId).update({
         'title': newAttraction['name'],
         'name_local': newAttraction['name_local'],
@@ -264,7 +543,6 @@ out center $limit;
         'tips': ['Replaced from original itinerary', 'Check opening hours before visiting'],
         'isReplaced': true,
         'replacedAt': FieldValue.serverTimestamp(),
-        // Preserve original time slots
         'startTime': originalData['startTime'],
         'endTime': originalData['endTime'],
         'dayNumber': originalData['dayNumber'],
@@ -300,24 +578,26 @@ out center $limit;
       final data1 = doc1.data()!;
       final data2 = doc2.data()!;
 
-      // Verify same day
       if (data1['dayNumber'] != data2['dayNumber']) {
         throw Exception('Can only swap attractions within the same day');
       }
 
-      // Swap time slots and order
       final batch = _firestore.batch();
 
       batch.update(_firestore.collection('itineraryItem').doc(itemId1), {
         'startTime': data2['startTime'],
         'endTime': data2['endTime'],
         'orderInDay': data2['orderInDay'],
+        'isReordered': true,
+        'reorderedAt': FieldValue.serverTimestamp(),
       });
 
       batch.update(_firestore.collection('itineraryItem').doc(itemId2), {
         'startTime': data1['startTime'],
         'endTime': data1['endTime'],
         'orderInDay': data1['orderInDay'],
+        'isReordered': true,
+        'reorderedAt': FieldValue.serverTimestamp(),
       });
 
       await batch.commit();
@@ -332,7 +612,7 @@ out center $limit;
     }
   }
 
-  /// Mark an attraction as "skipped" - extends previous activity time instead of deleting
+  /// Mark an attraction as "skipped"
   Future<bool> skipAttraction({
     required String tripId,
     required String itemId,
@@ -351,14 +631,12 @@ out center $limit;
       final orderInDay = data['orderInDay'];
       final skippedEndTime = data['endTime'];
 
-      // FIXED: Get all items for this day, then filter in code to avoid needing composite index
       final dayItems = await _firestore
           .collection('itineraryItem')
           .where('tripID', isEqualTo: tripId)
           .where('dayNumber', isEqualTo: dayNumber)
           .get();
 
-      // Find the previous activity (highest orderInDay less than current)
       DocumentSnapshot? previousItem;
       int highestPreviousOrder = -1;
 
@@ -367,7 +645,6 @@ out center $limit;
         final itemOrder = itemData['orderInDay'] as int? ?? 0;
         final isSkipped = itemData['isSkipped'] == true;
 
-        // Skip if it's a skipped item or if it's the current item
         if (isSkipped || item.id == itemId) continue;
 
         if (itemOrder < orderInDay && itemOrder > highestPreviousOrder) {
@@ -378,7 +655,6 @@ out center $limit;
 
       final batch = _firestore.batch();
 
-      // Extend previous activity if exists
       if (previousItem != null) {
         batch.update(previousItem.reference, {
           'endTime': skippedEndTime,
@@ -387,11 +663,10 @@ out center $limit;
         });
       }
 
-      // Mark current item as skipped (soft delete)
       batch.update(_firestore.collection('itineraryItem').doc(itemId), {
         'isSkipped': true,
         'skippedAt': FieldValue.serverTimestamp(),
-        'originalData': data, // Preserve for potential undo
+        'originalData': data,
       });
 
       await batch.commit();
@@ -427,21 +702,18 @@ out center $limit;
         throw Exception('Original data not found');
       }
 
-      // Restore original item
       await _firestore.collection('itineraryItem').doc(itemId).update({
         'isSkipped': false,
         'skippedAt': FieldValue.delete(),
         'originalData': FieldValue.delete(),
       });
 
-      // FIXED: Get all items for this day, then filter in code to avoid composite index
       final dayItems = await _firestore
           .collection('itineraryItem')
           .where('tripID', isEqualTo: tripId)
           .where('dayNumber', isEqualTo: data['dayNumber'])
           .get();
 
-      // Find the previous extended activity
       DocumentSnapshot? previousExtendedItem;
       int highestPreviousOrder = -1;
       final currentOrder = data['orderInDay'] as int? ?? 0;
@@ -458,7 +730,6 @@ out center $limit;
       }
 
       if (previousExtendedItem != null) {
-        // Calculate original end time (30 min before skipped item start)
         final skippedStart = originalData['startTime'] ?? data['startTime'];
         await previousExtendedItem.reference.update({
           'endTime': _subtractTime(skippedStart, 30),
@@ -477,27 +748,11 @@ out center $limit;
     }
   }
 
-  String _subtractTime(String time, int minutes) {
-    final parts = time.split(':');
-    var hours = int.parse(parts[0]);
-    var mins = int.parse(parts[1]);
-
-    mins -= minutes;
-    while (mins < 0) {
-      mins += 60;
-      hours -= 1;
-    }
-
-    return '${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}';
-  }
-
-  /// Extend time at current attraction (take time from next activity)
   /// Adjust time for an attraction (extend or shorten)
-  /// Use positive minutes to extend, negative to shorten
   Future<bool> adjustTime({
     required String tripId,
     required String itemId,
-    required int minutes, // positive = extend, negative = shorten
+    required int minutes,
   }) async {
     onLoadingChanged?.call(true);
 
@@ -514,26 +769,22 @@ out center $limit;
       final currentEndTime = data['endTime'] as String;
       final currentStartTime = data['startTime'] as String;
 
-      // Calculate new end time
       final newEndTime = minutes >= 0
           ? _addTime(currentEndTime, minutes)
           : _subtractTime(currentEndTime, minutes.abs());
 
-      // Validate: end time should be after start time
       if (_timeToMinutes(newEndTime) <= _timeToMinutes(currentStartTime)) {
         onLoadingChanged?.call(false);
         onError?.call('Cannot shorten: activity would have no duration');
         return false;
       }
 
-      // FIXED: Get all items for this day, then filter to avoid composite index
       final dayItems = await _firestore
           .collection('itineraryItem')
           .where('tripID', isEqualTo: tripId)
           .where('dayNumber', isEqualTo: dayNumber)
           .get();
 
-      // Find the next activity (lowest orderInDay greater than current)
       DocumentSnapshot? nextItem;
       int lowestNextOrder = 999999;
 
@@ -552,7 +803,6 @@ out center $limit;
 
       final batch = _firestore.batch();
 
-      // Update current item
       batch.update(_firestore.collection('itineraryItem').doc(itemId), {
         'endTime': newEndTime,
         'isExtended': minutes > 0,
@@ -560,7 +810,6 @@ out center $limit;
         'timeAdjustedMinutes': minutes,
       });
 
-      // Adjust next item start time if exists
       if (nextItem != null) {
         batch.update(nextItem.reference, {
           'startTime': newEndTime,
@@ -580,7 +829,6 @@ out center $limit;
     }
   }
 
-  /// Legacy method - calls adjustTime with positive minutes
   Future<bool> extendTime({
     required String tripId,
     required String itemId,
@@ -593,7 +841,6 @@ out center $limit;
     );
   }
 
-  /// Shorten time - calls adjustTime with negative minutes
   Future<bool> shortenTime({
     required String tripId,
     required String itemId,
@@ -604,26 +851,6 @@ out center $limit;
       itemId: itemId,
       minutes: -minutesToShorten,
     );
-  }
-
-  /// Convert time string to minutes for comparison
-  int _timeToMinutes(String time) {
-    final parts = time.split(':');
-    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
-  }
-
-  String _addTime(String time, int minutes) {
-    final parts = time.split(':');
-    var hours = int.parse(parts[0]);
-    var mins = int.parse(parts[1]);
-
-    mins += minutes;
-    while (mins >= 60) {
-      mins -= 60;
-      hours += 1;
-    }
-
-    return '${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}';
   }
 
   /// Add a custom note to an attraction
@@ -642,6 +869,49 @@ out center $limit;
       onError?.call('Failed to save note');
       return false;
     }
+  }
+
+  // ============================================
+  // HELPER METHODS
+  // ============================================
+
+  int _timeToMinutes(String time) {
+    final parts = time.split(':');
+    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+  }
+
+  String _minutesToTime(int minutes) {
+    final hours = (minutes ~/ 60) % 24;
+    final mins = minutes % 60;
+    return '${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}';
+  }
+
+  String _addTime(String time, int minutes) {
+    final parts = time.split(':');
+    var hours = int.parse(parts[0]);
+    var mins = int.parse(parts[1]);
+
+    mins += minutes;
+    while (mins >= 60) {
+      mins -= 60;
+      hours += 1;
+    }
+
+    return '${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}';
+  }
+
+  String _subtractTime(String time, int minutes) {
+    final parts = time.split(':');
+    var hours = int.parse(parts[0]);
+    var mins = int.parse(parts[1]);
+
+    mins -= minutes;
+    while (mins < 0) {
+      mins += 60;
+      hours -= 1;
+    }
+
+    return '${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}';
   }
 
   void dispose() {

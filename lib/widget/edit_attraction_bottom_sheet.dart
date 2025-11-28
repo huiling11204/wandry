@@ -1,5 +1,6 @@
 // lib/widget/edit_attraction_bottom_sheet.dart
-// Bottom sheet for editing a single attraction item
+// COMPLETE VERSION: Bottom sheet for editing a single attraction item
+// Includes: Replace, Skip, Extend/Shorten time, Add note, Reorder info
 
 import 'package:flutter/material.dart';
 import '../controller/itinerary_edit_controller.dart';
@@ -91,11 +92,13 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
     final startTime = widget.itemData['startTime'] ?? '';
     final endTime = widget.itemData['endTime'] ?? '';
     final dayNumber = widget.itemData['dayNumber'] ?? 1;
+    final isReordered = widget.itemData['isReordered'] == true;
+    final isReplaced = widget.itemData['isReplaced'] == true;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.5,
+      initialChildSize: 0.55,
       minChildSize: 0.3,
-      maxChildSize: 0.8,
+      maxChildSize: 0.85,
       builder: (context, scrollController) {
         return Container(
           decoration: const BoxDecoration(
@@ -133,12 +136,23 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Edit Activity',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Edit Activity',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              // Status badges
+                              if (isReordered)
+                                _buildMiniStatusBadge('Reordered', Colors.purple),
+                              if (isReplaced)
+                                _buildMiniStatusBadge('Replaced', Colors.orange),
+                            ],
                           ),
                           Text(
                             title,
@@ -186,6 +200,56 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
                   controller: scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
+                    // Reorder hint card (NEW)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.purple[50]!, Colors.purple[100]!],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.purple[200]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.purple[200],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.drag_indicator, color: Colors.purple[700], size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Want to Reorder?',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.purple[900],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Use the "Reorder" button in the day header to drag & drop attractions.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.purple[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.swap_vert, color: Colors.purple[400], size: 24),
+                        ],
+                      ),
+                    ),
+
                     _buildOptionTile(
                       icon: Icons.swap_horiz,
                       title: 'Replace with Nearby Attraction',
@@ -226,29 +290,63 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
                       onTap: () => _showAddNoteDialog(),
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
 
-                    // Info card
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue[200]!),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Restaurant options remain unchanged. You can choose from multiple restaurants during your trip.',
-                              style: TextStyle(fontSize: 12, color: Colors.blue[800]),
+                    // Distance info
+                    if (widget.itemData['distanceKm'] != null || widget.itemData['estimatedTravelMinutes'] != null)
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.directions_car, color: Colors.grey[600], size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Travel from previous location',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      if (widget.itemData['distanceKm'] != null) ...[
+                                        Text(
+                                          '${widget.itemData['distanceKm']} km',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                      ],
+                                      if (widget.itemData['estimatedTravelMinutes'] != null)
+                                        Text(
+                                          '~${widget.itemData['estimatedTravelMinutes']} min',
+                                          style: TextStyle(
+                                            color: Colors.grey[700],
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -262,6 +360,21 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildMiniStatusBadge(String label, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold),
+      ),
     );
   }
 
@@ -399,11 +512,6 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
     );
   }
 
-  // Legacy method for backwards compatibility
-  void _showExtendTimeDialog() {
-    _showAdjustTimeDialog(isExtend: true);
-  }
-
   Widget _buildTimeChip(int minutes, {bool isExtend = true, Color? color}) {
     final chipColor = color ?? (isExtend ? Colors.green : Colors.orange);
     final prefix = isExtend ? '+' : '-';
@@ -463,7 +571,7 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'You can undo this action later.',
+                      'You can restore this activity later from the "Skipped Activities" section.',
                       style: TextStyle(fontSize: 12, color: Colors.amber[900]),
                     ),
                   ),
@@ -501,21 +609,35 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add Note'),
-        content: TextField(
-          controller: noteController,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'Add your personal notes here...',
-            border: OutlineInputBorder(),
-          ),
+        title: Row(
+          children: [
+            Icon(Icons.note_add, color: Colors.purple[700]),
+            const SizedBox(width: 8),
+            const Text('Add Note'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: noteController,
+              maxLines: 4,
+              maxLength: 200,
+              decoration: InputDecoration(
+                hintText: 'Add your personal notes here...\ne.g., "Bring camera", "Book tickets online"',
+                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: Colors.grey[50],
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(context);
               _controller.addNote(
@@ -523,7 +645,12 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
                 note: noteController.text,
               );
             },
-            child: const Text('Save'),
+            icon: const Icon(Icons.save, size: 18),
+            label: const Text('Save'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purple,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),
@@ -531,7 +658,10 @@ class _EditAttractionBottomSheetState extends State<EditAttractionBottomSheet> {
   }
 }
 
-// Separate sheet for replace functionality
+// ============================================
+// Replace Attraction Sheet
+// ============================================
+
 class ReplaceAttractionSheet extends StatefulWidget {
   final String tripId;
   final String itemId;
@@ -705,6 +835,70 @@ class _ReplaceAttractionSheetState extends State<ReplaceAttractionSheet> {
                 ),
               ),
 
+              // Current item info
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.location_off, color: Colors.red[700], size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.itemData['title'] ?? 'Current',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red[900],
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          Text(
+                            '${widget.itemData['startTime']} - ${widget.itemData['endTime']}',
+                            style: TextStyle(fontSize: 12, color: Colors.red[700]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Alternatives header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Icon(Icons.place, color: Colors.green[700], size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Nearby Alternatives',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[800],
+                      ),
+                    ),
+                    const Spacer(),
+                    if (!_isLoading)
+                      Text(
+                        '${_alternatives.length} found',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
               // Content
               Expanded(
                 child: _buildContent(scrollController),
@@ -847,7 +1041,7 @@ class _ReplaceAttractionSheetState extends State<ReplaceAttractionSheet> {
                 ),
               ),
 
-              // Rating
+              // Rating & action
               Column(
                 children: [
                   Row(
@@ -862,12 +1056,13 @@ class _ReplaceAttractionSheetState extends State<ReplaceAttractionSheet> {
                   ),
                   const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.blue[50],
+                      color: Colors.green[50],
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green[200]!),
                     ),
-                    child: const Icon(Icons.swap_horiz, size: 20, color: Colors.blue),
+                    child: Icon(Icons.check, size: 20, color: Colors.green[700]),
                   ),
                 ],
               ),
@@ -887,17 +1082,42 @@ class _ReplaceAttractionSheetState extends State<ReplaceAttractionSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Replace "${widget.itemData['title']}" with:'),
-            const SizedBox(height: 12),
+            // Old attraction
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.remove_circle, color: Colors.red[700], size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.itemData['title'] ?? 'Current',
+                      style: TextStyle(
+                        color: Colors.red[900],
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Center(child: Icon(Icons.arrow_downward, color: Colors.grey)),
+            const SizedBox(height: 8),
+            // New attraction
+            Container(
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.green[50],
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.place, color: Colors.green[700]),
+                  Icon(Icons.add_circle, color: Colors.green[700], size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -908,6 +1128,11 @@ class _ReplaceAttractionSheetState extends State<ReplaceAttractionSheet> {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            Text(
+              'Time slot will remain: ${widget.itemData['startTime']} - ${widget.itemData['endTime']}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
           ],
         ),
         actions: [
@@ -915,7 +1140,7 @@ class _ReplaceAttractionSheetState extends State<ReplaceAttractionSheet> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(context);
               _controller.replaceAttraction(
@@ -925,8 +1150,12 @@ class _ReplaceAttractionSheetState extends State<ReplaceAttractionSheet> {
                 city: widget.city,
               );
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            child: const Text('Replace', style: TextStyle(color: Colors.white)),
+            icon: const Icon(Icons.swap_horiz, size: 18),
+            label: const Text('Replace'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),
@@ -935,25 +1164,39 @@ class _ReplaceAttractionSheetState extends State<ReplaceAttractionSheet> {
 
   Color _getCategoryColor(String? category) {
     switch (category?.toLowerCase()) {
-      case 'museum': return Colors.amber;
-      case 'park': return Colors.green;
-      case 'temple': return Colors.purple;
-      case 'viewpoint': return Colors.cyan;
-      case 'entertainment': return Colors.red;
-      case 'cultural': return Colors.brown;
-      default: return Colors.blue;
+      case 'museum':
+        return Colors.amber;
+      case 'park':
+        return Colors.green;
+      case 'temple':
+        return Colors.purple;
+      case 'viewpoint':
+        return Colors.cyan;
+      case 'entertainment':
+        return Colors.red;
+      case 'cultural':
+        return Colors.brown;
+      default:
+        return Colors.blue;
     }
   }
 
   IconData _getCategoryIcon(String? category) {
     switch (category?.toLowerCase()) {
-      case 'museum': return Icons.museum;
-      case 'park': return Icons.park;
-      case 'temple': return Icons.temple_buddhist;
-      case 'viewpoint': return Icons.landscape;
-      case 'entertainment': return Icons.attractions;
-      case 'cultural': return Icons.account_balance;
-      default: return Icons.place;
+      case 'museum':
+        return Icons.museum;
+      case 'park':
+        return Icons.park;
+      case 'temple':
+        return Icons.temple_buddhist;
+      case 'viewpoint':
+        return Icons.landscape;
+      case 'entertainment':
+        return Icons.attractions;
+      case 'cultural':
+        return Icons.account_balance;
+      default:
+        return Icons.place;
     }
   }
 }

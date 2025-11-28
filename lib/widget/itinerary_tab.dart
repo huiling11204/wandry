@@ -1,7 +1,13 @@
 // lib/widget/itinerary_tab.dart
-// COMPLETE MERGED VERSION: Original itinerary_tab.dart + Edit functionality
-// This combines ALL your existing code with the new edit features
+// COMPLETE VERSION: With Drag-to-Reorder functionality + SweetAlert dialogs
+// Features:
+// - Drag destinations to reorder within same day
+// - Distance validation with warnings (FIXED)
+// - Meals are locked (cannot be dragged)
+// - Auto-recalculate travel times after reorder
+// - Beautiful SweetAlert-style dialogs
 
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,20 +15,70 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../model/itinerary_item_model.dart';
 import '../utilities/icon_helper.dart';
-import '../controller/itinerary_edit_controller.dart'; // NEW: Import for undo skip
-import 'edit_attraction_bottom_sheet.dart'; // NEW: Import for edit functionality
+import '../controller/itinerary_edit_controller.dart';
+import 'edit_attraction_bottom_sheet.dart';
 import 'destination_type_selector_widget.dart';
+import 'sweet_alert_dialog.dart';
 
-class ItineraryTab extends StatelessWidget {
+class ItineraryTab extends StatefulWidget {
   final String tripId;
 
   const ItineraryTab({super.key, required this.tripId});
 
   @override
+  State<ItineraryTab> createState() => _ItineraryTabState();
+}
+
+class _ItineraryTabState extends State<ItineraryTab> {
+  final ItineraryEditController _editController = ItineraryEditController();
+
+  // Track which day is in edit/reorder mode
+  int? _reorderingDay;
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupController();
+  }
+
+  void _setupController() {
+    _editController.onLoadingChanged = (isLoading) {
+      if (mounted) setState(() => _isProcessing = isLoading);
+    };
+
+    _editController.onError = (message) {
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Oops!',
+          subtitle: message,
+        );
+      }
+    };
+
+    _editController.onSuccess = (message) {
+      if (mounted) {
+        SweetAlertDialog.success(
+          context: context,
+          title: 'Success!',
+          subtitle: message,
+        );
+      }
+    };
+  }
+
+  @override
+  void dispose() {
+    _editController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     // 1. Fetch Trip Data for Dates AND Destination Types
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('trip').doc(tripId).snapshots(),
+      stream: FirebaseFirestore.instance.collection('trip').doc(widget.tripId).snapshots(),
       builder: (context, tripSnapshot) {
         if (!tripSnapshot.hasData) return const Center(child: CircularProgressIndicator());
 
@@ -37,13 +93,13 @@ class ItineraryTab extends StatelessWidget {
             (tripData['destinationTypes'] as List?)?.cast<String>() ??
             [];
 
-        // NEW: Get city for edit functionality
+        // Get city for edit functionality
         final city = tripData['city'] ?? tripData['destinationCity'] ?? '';
         final country = tripData['country'] ?? tripData['destinationCountry'] ?? '';
 
         // 2. Fetch Accommodation Data for "Start from Hotel" card
         return StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance.collection('accommodation').doc(tripId).snapshots(),
+          stream: FirebaseFirestore.instance.collection('accommodation').doc(widget.tripId).snapshots(),
           builder: (context, accommodationSnapshot) {
             Map<String, dynamic>? accommodationData;
             if (accommodationSnapshot.hasData && accommodationSnapshot.data!.exists) {
@@ -59,7 +115,7 @@ class ItineraryTab extends StatelessWidget {
             return StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('itineraryItem')
-                  .where('tripID', isEqualTo: tripId)
+                  .where('tripID', isEqualTo: widget.tripId)
                   .orderBy('dayNumber')
                   .orderBy('orderInDay')
                   .snapshots(),
@@ -73,7 +129,7 @@ class ItineraryTab extends StatelessWidget {
 
                 final items = snapshot.data!.docs;
                 final groupedByDay = <int, List<DocumentSnapshot>>{};
-                final skippedItems = <DocumentSnapshot>[]; // Track skipped items
+                final skippedItems = <DocumentSnapshot>[];
 
                 for (var item in items) {
                   final data = item.data() as Map<String, dynamic>;
@@ -91,59 +147,96 @@ class ItineraryTab extends StatelessWidget {
                 final hasSkippedItems = skippedItems.isNotEmpty;
                 final totalItems = groupedByDay.length + 1 + (hasSkippedItems ? 1 : 0);
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: totalItems,
-                  itemBuilder: (context, index) {
-                    // First item: Show trip style header
-                    if (index == 0) {
-                      return _buildTripStyleHeader(context, destinationTypes, tripData);
-                    }
+                return Stack(
+                  children: [
+                    ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: totalItems,
+                      itemBuilder: (context, index) {
+                        // First item: Show trip style header
+                        if (index == 0) {
+                          return _buildTripStyleHeader(context, destinationTypes, tripData);
+                        }
 
-                    // Last item: Show skipped activities section (if any)
-                    if (hasSkippedItems && index == totalItems - 1) {
-                      return _buildSkippedSection(context, skippedItems, tripId);
-                    }
+                        // Last item: Show skipped activities section (if any)
+                        if (hasSkippedItems && index == totalItems - 1) {
+                          return _buildSkippedSection(context, skippedItems, widget.tripId);
+                        }
 
-                    final dayIndex = index - 1;
-                    final day = groupedByDay.keys.elementAt(dayIndex);
-                    final dayItems = groupedByDay[day]!;
+                        final dayIndex = index - 1;
+                        final day = groupedByDay.keys.elementAt(dayIndex);
+                        final dayItems = groupedByDay[day]!;
 
-                    // Date Logic
-                    String dateString = '';
-                    if (startDate != null) {
-                      final date = startDate.add(Duration(days: day - 1));
-                      dateString = DateFormat('EEEE, d MMM').format(date);
-                    }
+                        // Date Logic
+                        String dateString = '';
+                        if (startDate != null) {
+                          final date = startDate.add(Duration(days: day - 1));
+                          dateString = DateFormat('EEEE, d MMM').format(date);
+                        }
 
-                    // Weather Logic - get from first item that has weather
-                    Map<String, dynamic>? dayWeather;
-                    for (var item in dayItems) {
-                      final data = item.data() as Map<String, dynamic>;
-                      if (data['weather'] != null) {
-                        dayWeather = data['weather'];
-                        break;
-                      }
-                    }
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildDayHeader(context, day, dateString, dayItems.length, dayWeather),
-
-                        // ACCOMMODATION CARD (Start of Route) - only on Day 1
-                        if (day == 1 && accommodationData != null)
-                          _buildAccommodationEntry(context, accommodationData),
-
-                        ...dayItems.map((item) {
+                        // Weather Logic - get from first item that has weather
+                        Map<String, dynamic>? dayWeather;
+                        for (var item in dayItems) {
                           final data = item.data() as Map<String, dynamic>;
-                          // NEW: Pass itemId, city, country for edit functionality
-                          return _buildItineraryCard(context, data, item.id, city, country);
-                        }),
-                        const SizedBox(height: 16),
-                      ],
-                    );
-                  },
+                          if (data['weather'] != null) {
+                            dayWeather = data['weather'];
+                            break;
+                          }
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildDayHeader(
+                              context,
+                              day,
+                              dateString,
+                              dayItems.length,
+                              dayWeather,
+                              accommodationData,
+                            ),
+
+                            // ACCOMMODATION CARD (Start of Route) - only on Day 1
+                            if (day == 1 && accommodationData != null)
+                              _buildAccommodationEntry(context, accommodationData),
+
+                            // Day items with reorder capability
+                            _buildDayItemsList(
+                              context,
+                              day,
+                              dayItems,
+                              city,
+                              country,
+                              accommodationData,
+                            ),
+
+                            const SizedBox(height: 16),
+                          ],
+                        );
+                      },
+                    ),
+
+                    // Loading overlay
+                    if (_isProcessing)
+                      Container(
+                        color: Colors.black.withOpacity(0.3),
+                        child: const Center(
+                          child: Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(),
+                                  SizedBox(height: 16),
+                                  Text('Updating itinerary...'),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               },
             );
@@ -151,6 +244,530 @@ class ItineraryTab extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Build the day items list with reorder capability
+  Widget _buildDayItemsList(
+      BuildContext context,
+      int day,
+      List<DocumentSnapshot> dayItems,
+      String city,
+      String country,
+      Map<String, dynamic>? accommodationData,
+      ) {
+    final isReordering = _reorderingDay == day;
+
+    // Separate draggable items (attractions) from non-draggable items (meals)
+    final List<DocumentSnapshot> allItems = dayItems;
+
+    if (isReordering) {
+      return _buildReorderableList(context, day, allItems, city, country, accommodationData);
+    } else {
+      return Column(
+        children: allItems.map((item) {
+          final data = item.data() as Map<String, dynamic>;
+          return _buildItineraryCard(context, data, item.id, city, country);
+        }).toList(),
+      );
+    }
+  }
+
+  /// Build reorderable list for a specific day
+  Widget _buildReorderableList(
+      BuildContext context,
+      int day,
+      List<DocumentSnapshot> dayItems,
+      String city,
+      String country,
+      Map<String, dynamic>? accommodationData,
+      ) {
+    return Column(
+      children: [
+        // Instructions banner
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.purple[50]!, Colors.purple[100]!],
+            ),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.purple[300]!),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple[200],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.drag_indicator, color: Colors.purple[700], size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Drag to Reorder',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple[900],
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      'Drag attractions up/down. Meals are locked.',
+                      style: TextStyle(fontSize: 11, color: Colors.purple[700]),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => setState(() => _reorderingDay = null),
+                icon: const Icon(Icons.check, size: 16),
+                label: const Text('Done'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple[600],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Reorderable list
+        ReorderableListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: dayItems.length,
+          onReorder: (oldIndex, newIndex) {
+            _handleReorder(context, day, dayItems, oldIndex, newIndex, accommodationData);
+          },
+          proxyDecorator: (child, index, animation) {
+            return AnimatedBuilder(
+              animation: animation,
+              builder: (context, child) {
+                final double elevation = Tween<double>(begin: 0, end: 8).evaluate(animation);
+                return Material(
+                  elevation: elevation,
+                  borderRadius: BorderRadius.circular(12),
+                  shadowColor: Colors.purple.withOpacity(0.3),
+                  child: child,
+                );
+              },
+              child: child,
+            );
+          },
+          itemBuilder: (context, index) {
+            final item = dayItems[index];
+            final data = item.data() as Map<String, dynamic>;
+            final category = data['category'] as String? ?? 'attraction';
+            final isMeal = ['breakfast', 'lunch', 'dinner', 'meal', 'cafe', 'snack'].contains(category.toLowerCase());
+
+            return _buildReorderableItem(
+              key: ValueKey(item.id),
+              data: data,
+              itemId: item.id,
+              city: city,
+              country: country,
+              isMeal: isMeal,
+              index: index,
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  /// Build a single reorderable item
+  Widget _buildReorderableItem({
+    required Key key,
+    required Map<String, dynamic> data,
+    required String itemId,
+    required String city,
+    required String country,
+    required bool isMeal,
+    required int index,
+  }) {
+    final category = data['category'] as String? ?? 'attraction';
+    final categoryColor = IconHelper.getCategoryColor(category);
+
+    return Container(
+      key: key,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          // Drag handle (only for non-meals)
+          if (!isMeal)
+            ReorderableDragStartListener(
+              index: index,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.purple[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.drag_indicator,
+                  color: Colors.purple[400],
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.lock_outline,
+                color: Colors.grey[400],
+                size: 24,
+              ),
+            ),
+
+          const SizedBox(width: 8),
+
+          // Card content
+          Expanded(
+            child: Card(
+              elevation: isMeal ? 1 : 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: isMeal ? Colors.grey[300]! : Colors.purple.withOpacity(0.3),
+                  width: isMeal ? 1 : 2,
+                ),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: categoryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    IconHelper.getCategoryIcon(category),
+                    color: categoryColor,
+                    size: 20,
+                  ),
+                ),
+                title: Text(
+                  data['title'] ?? 'Activity',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: isMeal ? Colors.grey[600] : Colors.black87,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Row(
+                  children: [
+                    Text(
+                      '${data['startTime']} - ${data['endTime']}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    if (data['distanceKm'] != null) ...[
+                      const SizedBox(width: 8),
+                      Icon(Icons.directions_car, size: 12, color: Colors.blue[400]),
+                      Text(
+                        ' ${data['distanceKm']} km',
+                        style: TextStyle(fontSize: 11, color: Colors.blue[600]),
+                      ),
+                    ],
+                  ],
+                ),
+                trailing: isMeal
+                    ? Tooltip(
+                  message: 'Meals cannot be reordered',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.restaurant, size: 14, color: Colors.grey[500]),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Locked',
+                          style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                    : Icon(Icons.swap_vert, size: 20, color: Colors.purple[400]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Handle reorder action with distance validation - FIXED VERSION
+  Future<void> _handleReorder(
+      BuildContext context,
+      int day,
+      List<DocumentSnapshot> dayItems,
+      int oldIndex,
+      int newIndex,
+      Map<String, dynamic>? accommodationData,
+      ) async {
+    // Adjust newIndex for ReorderableListView behavior
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+
+    if (oldIndex == newIndex) return;
+
+    final movedItem = dayItems[oldIndex];
+    final movedData = movedItem.data() as Map<String, dynamic>;
+    final movedCategory = movedData['category'] as String? ?? 'attraction';
+
+    // Check if it's a meal (shouldn't happen due to UI, but double-check)
+    if (['breakfast', 'lunch', 'dinner', 'meal', 'cafe', 'snack'].contains(movedCategory.toLowerCase())) {
+      await SweetAlertDialog.warning(
+        context: context,
+        title: 'Cannot Move Meals',
+        subtitle: 'Meal times are fixed to maintain your schedule. Only attractions can be reordered.',
+      );
+      return;
+    }
+
+    // Calculate distance impact - ALWAYS SHOW THE WARNING DIALOG
+    final distanceInfo = _calculateDistanceImpact(
+      dayItems,
+      oldIndex,
+      newIndex,
+      accommodationData,
+    );
+
+    // Always show the route warning dialog (even for small changes)
+    final confirmed = await RouteWarningDialog.show(
+      context: context,
+      itemName: movedData['title'] ?? 'Activity',
+      addedDistance: distanceInfo['addedDistance'],
+      addedTime: distanceInfo['addedTime'],
+      oldDistance: distanceInfo['oldDistance'],
+      newDistance: distanceInfo['newDistance'],
+    );
+
+    if (confirmed != true) return;
+
+    // Perform the reorder
+    await _performReorder(day, dayItems, oldIndex, newIndex);
+  }
+
+  /// Calculate distance impact of reordering - IMPROVED VERSION
+  Map<String, dynamic> _calculateDistanceImpact(
+      List<DocumentSnapshot> dayItems,
+      int oldIndex,
+      int newIndex,
+      Map<String, dynamic>? accommodationData,
+      ) {
+    double oldTotalDistance = 0;
+    double newTotalDistance = 0;
+
+    // Get coordinates for all items including hotel
+    List<Map<String, double>> coords = [];
+
+    // Add hotel/starting point if available
+    if (accommodationData != null) {
+      final hotelCoords = accommodationData['coordinates'] as Map<String, dynamic>?;
+      if (hotelCoords != null) {
+        final lat = (hotelCoords['lat'] ?? hotelCoords['latitude']);
+        final lng = (hotelCoords['lng'] ?? hotelCoords['longitude']);
+        if (lat != null && lng != null) {
+          coords.add({
+            'lat': (lat is num) ? lat.toDouble() : 0.0,
+            'lng': (lng is num) ? lng.toDouble() : 0.0,
+          });
+        }
+      }
+    }
+
+    // If no hotel, add a placeholder
+    if (coords.isEmpty) {
+      // Use first item's coords as starting point
+      for (var item in dayItems) {
+        final data = item.data() as Map<String, dynamic>;
+        final itemCoords = data['coordinates'] as Map<String, dynamic>?;
+        if (itemCoords != null) {
+          final lat = itemCoords['lat'];
+          final lng = itemCoords['lng'];
+          if (lat != null && lng != null) {
+            coords.add({
+              'lat': (lat is num) ? lat.toDouble() : 0.0,
+              'lng': (lng is num) ? lng.toDouble() : 0.0,
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    // Add all item coordinates
+    for (var item in dayItems) {
+      final data = item.data() as Map<String, dynamic>;
+      final itemCoords = data['coordinates'] as Map<String, dynamic>?;
+      if (itemCoords != null) {
+        final lat = itemCoords['lat'];
+        final lng = itemCoords['lng'];
+        coords.add({
+          'lat': (lat is num) ? lat.toDouble() : 0.0,
+          'lng': (lng is num) ? lng.toDouble() : 0.0,
+        });
+      } else {
+        // Use previous coords or zeros
+        coords.add(coords.isNotEmpty ? coords.last : {'lat': 0.0, 'lng': 0.0});
+      }
+    }
+
+    // Calculate old total distance
+    for (int i = 1; i < coords.length; i++) {
+      if (coords[i]['lat'] != 0 && coords[i]['lng'] != 0 &&
+          coords[i - 1]['lat'] != 0 && coords[i - 1]['lng'] != 0) {
+        oldTotalDistance += _haversineDistance(
+          coords[i - 1]['lat']!,
+          coords[i - 1]['lng']!,
+          coords[i]['lat']!,
+          coords[i]['lng']!,
+        );
+      }
+    }
+
+    // Create reordered coordinates list
+    List<Map<String, double>> newCoords = [];
+
+    // Add starting point (hotel or first destination)
+    if (coords.isNotEmpty) {
+      newCoords.add(coords[0]);
+    }
+
+    // Get just the item coords (excluding starting point)
+    int startOffset = accommodationData != null ? 1 : 0;
+    if (coords.length <= startOffset) {
+      // Not enough coords to calculate
+      return {
+        'oldDistance': 0.0,
+        'newDistance': 0.0,
+        'addedDistance': 0.0,
+        'addedTime': 0,
+      };
+    }
+
+    List<Map<String, double>> itemCoords = [];
+    for (int i = startOffset; i < coords.length; i++) {
+      itemCoords.add(Map<String, double>.from(coords[i]));
+    }
+
+    // Perform the reorder on itemCoords
+    if (oldIndex < itemCoords.length) {
+      final movedCoord = itemCoords.removeAt(oldIndex);
+      final insertAt = newIndex > oldIndex ? newIndex - 1 : newIndex;
+      if (insertAt <= itemCoords.length) {
+        itemCoords.insert(insertAt.clamp(0, itemCoords.length), movedCoord);
+      }
+    }
+
+    // Build new coords list
+    if (accommodationData != null && coords.isNotEmpty) {
+      newCoords = [coords[0], ...itemCoords];
+    } else {
+      newCoords = itemCoords;
+    }
+
+    // Calculate new total distance
+    for (int i = 1; i < newCoords.length; i++) {
+      if (newCoords[i]['lat'] != 0 && newCoords[i]['lng'] != 0 &&
+          newCoords[i - 1]['lat'] != 0 && newCoords[i - 1]['lng'] != 0) {
+        newTotalDistance += _haversineDistance(
+          newCoords[i - 1]['lat']!,
+          newCoords[i - 1]['lng']!,
+          newCoords[i]['lat']!,
+          newCoords[i]['lng']!,
+        );
+      }
+    }
+
+    final addedDistance = newTotalDistance - oldTotalDistance;
+    // Assuming average speed of 25 km/h in city + 10 min buffer
+    final addedTime = ((addedDistance / 25) * 60).round();
+
+    return {
+      'oldDistance': double.parse(oldTotalDistance.toStringAsFixed(2)),
+      'newDistance': double.parse(newTotalDistance.toStringAsFixed(2)),
+      'addedDistance': double.parse(addedDistance.toStringAsFixed(2)),
+      'addedTime': addedTime,
+    };
+  }
+
+  /// Haversine formula for distance calculation
+  double _haversineDistance(double lat1, double lon1, double lat2, double lon2) {
+    const double earthRadius = 6371; // km
+
+    final dLat = _toRadians(lat2 - lat1);
+    final dLon = _toRadians(lon2 - lon1);
+
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRadians(lat1)) * cos(_toRadians(lat2)) * sin(dLon / 2) * sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+
+    return earthRadius * c;
+  }
+
+  double _toRadians(double degree) {
+    return degree * 3.141592653589793 / 180;
+  }
+
+  /// Perform the actual reorder in Firestore
+  Future<void> _performReorder(
+      int day,
+      List<DocumentSnapshot> dayItems,
+      int oldIndex,
+      int newIndex,
+      ) async {
+    setState(() => _isProcessing = true);
+
+    try {
+      // Get all items that need updating
+      final List<DocumentSnapshot> updatedOrder = List.from(dayItems);
+      final movedItem = updatedOrder.removeAt(oldIndex);
+      updatedOrder.insert(newIndex, movedItem);
+
+      // Call the controller to perform the reorder
+      await _editController.reorderItems(
+        tripId: widget.tripId,
+        dayNumber: day,
+        itemIds: updatedOrder.map((doc) => doc.id).toList(),
+      );
+
+      // Exit reorder mode after successful reorder
+      setState(() {
+        _isProcessing = false;
+        _reorderingDay = null;
+      });
+    } catch (e) {
+      setState(() => _isProcessing = false);
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Reorder Failed',
+          subtitle: e.toString(),
+        );
+      }
+    }
   }
 
   /// Build the trip style header showing selected destination types
@@ -229,9 +846,8 @@ class ItineraryTab extends StatelessWidget {
             }).toList(),
           ),
           const SizedBox(height: 8),
-          // NEW: Updated hint text for edit functionality
           Text(
-            'Long press any attraction to edit • Tap for details',
+            'Long press to edit • Tap "Reorder" to drag destinations',
             style: TextStyle(
               fontSize: 11,
               color: Colors.green[600],
@@ -284,11 +900,12 @@ class ItineraryTab extends StatelessWidget {
       'entertainment': {'emoji': '🎭', 'label': 'Entertainment & Fun', 'color': Colors.red},
     };
 
-    return types[type.toLowerCase()] ?? {
-      'emoji': '📍',
-      'label': type,
-      'color': Colors.grey,
-    };
+    return types[type.toLowerCase()] ??
+        {
+          'emoji': '📍',
+          'label': type,
+          'color': Colors.grey,
+        };
   }
 
   /// Build the skipped activities section with restore option
@@ -381,67 +998,29 @@ class ItineraryTab extends StatelessWidget {
   }
 
   void _restoreSkippedItem(BuildContext context, String tripId, String itemId, String? title) async {
-    // Show confirmation dialog
-    final confirm = await showDialog<bool>(
+    final confirm = await SweetAlertDialog.confirm(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Restore Activity?'),
-        content: Text(
-          'Do you want to restore "${title ?? 'this activity'}" back to your itinerary?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context, true),
-            icon: const Icon(Icons.restore, size: 18),
-            label: const Text('Restore'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
+      title: 'Restore Activity?',
+      subtitle: 'Do you want to restore "${title ?? 'this activity'}" back to your itinerary?',
+      confirmText: 'Restore',
+      cancelText: 'Cancel',
     );
 
     if (confirm == true) {
-      // Call the undoSkip method
-      final controller = ItineraryEditController();
-      controller.onSuccess = (message) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
-                  Text(message),
-                ],
-              ),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      };
-      controller.onError = (message) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      };
-
-      await controller.undoSkip(tripId: tripId, itemId: itemId);
+      await _editController.undoSkip(tripId: tripId, itemId: itemId);
     }
   }
 
-  Widget _buildDayHeader(BuildContext context, int day, String dateString, int itemCount, Map<String, dynamic>? weather) {
+  Widget _buildDayHeader(
+      BuildContext context,
+      int day,
+      String dateString,
+      int itemCount,
+      Map<String, dynamic>? weather,
+      Map<String, dynamic>? accommodationData,
+      ) {
+    final isReordering = _reorderingDay == day;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
@@ -452,18 +1031,44 @@ class ItineraryTab extends StatelessWidget {
               gradient: const LinearGradient(colors: [Color(0xFF2196F3), Color(0xFF1976D2)]),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Text('Day $day', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+            child: Text('Day $day',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
           ),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (dateString.isNotEmpty) Text(dateString, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87)),
-              Text('$itemCount activities', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (dateString.isNotEmpty)
+                  Text(dateString,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87)),
+                Text('$itemCount activities', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+              ],
+            ),
           ),
-          const Spacer(),
-          // WEATHER WIDGET - RESTORED
+
+          // Reorder button
+          if (!isReordering)
+            ElevatedButton.icon(
+              onPressed: () => setState(() => _reorderingDay = day),
+              icon: const Icon(Icons.swap_vert, size: 16),
+              label: const Text('Reorder'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.purple[50],
+                foregroundColor: Colors.purple[700],
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(color: Colors.purple[200]!),
+                ),
+              ),
+            ),
+
+          const SizedBox(width: 8),
+
+          // Weather widget
           if (weather != null)
             GestureDetector(
               onTap: () => _showWeatherDetails(context, weather),
@@ -523,8 +1128,10 @@ class ItineraryTab extends StatelessWidget {
       ),
       child: ListTile(
         leading: const Icon(Icons.hotel, color: Colors.purple, size: 24),
-        title: Text('Start from ${accData['name'] ?? 'Hotel'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        subtitle: Text(accData['address'] ?? 'Your Accommodation', style: TextStyle(color: Colors.grey[600], fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text('Start from ${accData['name'] ?? 'Hotel'}',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        subtitle: Text(accData['address'] ?? 'Your Accommodation',
+            style: TextStyle(color: Colors.grey[600], fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
         dense: true,
         onTap: () {
           if (accData['maps_link'] != null) {
@@ -539,20 +1146,21 @@ class ItineraryTab extends StatelessWidget {
     );
   }
 
-  // UPDATED: Added itemId, city, country parameters for edit functionality
-  Widget _buildItineraryCard(BuildContext context, Map<String, dynamic> data, String itemId, String city, String country) {
+  Widget _buildItineraryCard(
+      BuildContext context, Map<String, dynamic> data, String itemId, String city, String country) {
     final category = data['category'] as String? ?? 'attraction';
-    final isMeal = ['breakfast', 'lunch', 'dinner', 'meal'].contains(category.toLowerCase());
+    final isMeal = ['breakfast', 'lunch', 'dinner', 'meal', 'cafe', 'snack'].contains(category.toLowerCase());
     final categoryColor = IconHelper.getCategoryColor(category);
     final hasRestaurantOptions = data['restaurantOptions'] != null && (data['restaurantOptions'] as List).isNotEmpty;
 
     // Check if this destination matches user's preferred categories
     final isPreferred = data['is_preferred'] == true || data['isPreferred'] == true;
 
-    // NEW: Check edit status flags
+    // Check edit status flags
     final isReplaced = data['isReplaced'] == true;
     final isExtended = data['isExtended'] == true;
     final isShortened = data['isShortened'] == true;
+    final isReordered = data['isReordered'] == true;
     final userNote = data['userNote'] as String?;
 
     return Card(
@@ -561,13 +1169,14 @@ class ItineraryTab extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          // NEW: Orange border for replaced items
-          color: isReplaced
+          color: isReordered
+              ? Colors.purple.withOpacity(0.5)
+              : isReplaced
               ? Colors.orange.withOpacity(0.5)
               : isPreferred
               ? Colors.green.withOpacity(0.5)
               : categoryColor.withOpacity(0.2),
-          width: isReplaced || isPreferred ? 2 : 1,
+          width: isReordered || isReplaced || isPreferred ? 2 : 1,
         ),
       ),
       child: InkWell(
@@ -578,16 +1187,17 @@ class ItineraryTab extends StatelessWidget {
             _showDestinationDetails(context, data);
           }
         },
-        // NEW: Long press for edit (only for non-meal items)
-        onLongPress: !isMeal ? () {
+        onLongPress: !isMeal
+            ? () {
           EditAttractionBottomSheet.show(
             context,
-            tripId: tripId,
+            tripId: widget.tripId,
             itemId: itemId,
             itemData: data,
             city: city,
           );
-        } : null,
+        }
+            : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -598,7 +1208,8 @@ class ItineraryTab extends StatelessWidget {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: categoryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                    decoration:
+                    BoxDecoration(color: categoryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
                     child: Icon(IconHelper.getCategoryIcon(category), color: categoryColor, size: 24),
                   ),
                   const SizedBox(width: 12),
@@ -616,56 +1227,27 @@ class ItineraryTab extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            // NEW: Replaced badge
-                            if (isReplaced)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.swap_horiz, size: 12, color: Colors.orange[700]),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      'Replaced',
-                                      style: TextStyle(fontSize: 10, color: Colors.orange[700], fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
-                                ),
-                              )
+                            // Status badges
+                            if (isReordered)
+                              _buildStatusBadge('Reordered', Icons.swap_vert, Colors.purple)
+                            else if (isReplaced)
+                              _buildStatusBadge('Replaced', Icons.swap_horiz, Colors.orange)
                             else if (isPreferred && !isMeal)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.green[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.check_circle, size: 12, color: Colors.green[700]),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      'Match',
-                                      style: TextStyle(fontSize: 10, color: Colors.green[700], fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                                _buildStatusBadge('Match', Icons.check_circle, Colors.green),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Row(children: [
                           Icon(Icons.access_time, size: 12, color: Colors.grey[600]),
                           const SizedBox(width: 4),
-                          // NEW: Show extended/shortened indicator
                           Text(
                             '${data['startTime']} - ${data['endTime']}${isExtended ? ' (extended)' : isShortened ? ' (shortened)' : ''}',
                             style: TextStyle(
-                              color: isExtended ? Colors.green[700] : isShortened ? Colors.orange[700] : Colors.grey[700],
+                              color: isExtended
+                                  ? Colors.green[700]
+                                  : isShortened
+                                  ? Colors.orange[700]
+                                  : Colors.grey[700],
                               fontSize: 13,
                               fontWeight: (isExtended || isShortened) ? FontWeight.w500 : FontWeight.normal,
                             ),
@@ -685,7 +1267,6 @@ class ItineraryTab extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // NEW: Edit hint icon for non-meal items
                   if (!isMeal)
                     Tooltip(
                       message: 'Long press to edit',
@@ -693,6 +1274,7 @@ class ItineraryTab extends StatelessWidget {
                     ),
                 ],
               ),
+
               // Travel info
               if (data['estimatedTravelMinutes'] != null || data['distanceKm'] != null) ...[
                 const SizedBox(height: 8),
@@ -723,7 +1305,7 @@ class ItineraryTab extends StatelessWidget {
                 ),
               ],
 
-              // NEW: User note display
+              // User note display
               if (userNote != null && userNote.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(
@@ -759,7 +1341,8 @@ class ItineraryTab extends StatelessWidget {
                     children: [
                       Icon(Icons.restaurant_menu, size: 14, color: Colors.orange[700]),
                       const SizedBox(width: 6),
-                      Text('${(data['restaurantOptions'] as List).length} options available', style: TextStyle(fontSize: 12, color: Colors.orange[900], fontWeight: FontWeight.w500)),
+                      Text('${(data['restaurantOptions'] as List).length} options available',
+                          style: TextStyle(fontSize: 12, color: Colors.orange[900], fontWeight: FontWeight.w500)),
                       const Spacer(),
                       const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.orange),
                     ],
@@ -773,8 +1356,29 @@ class ItineraryTab extends StatelessWidget {
     );
   }
 
+  Widget _buildStatusBadge(String label, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 2),
+          Text(
+            label,
+            style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ========================================
-  // WEATHER METHODS - RESTORED
+  // WEATHER METHODS
   // ========================================
 
   void _showWeatherDetails(BuildContext context, Map<String, dynamic> weather) {
@@ -839,7 +1443,6 @@ class ItineraryTab extends StatelessWidget {
                       ),
                     );
                   }).toList()),
-                  // Show if it's forecast or climate average
                   if (weather['is_forecast'] == false) ...[
                     const SizedBox(height: 16),
                     Container(
@@ -1110,8 +1713,10 @@ class ItineraryTab extends StatelessWidget {
     final mealType = item['category']?.toString().toUpperCase() ?? 'MEAL';
     final dayNumber = item['dayNumber'] ?? 0;
 
-    final sortedRestaurants = List<Map<String, dynamic>>.from(restaurants.map((r) => Map<String, dynamic>.from(r as Map)));
-    sortedRestaurants.sort((a, b) => ((a['distance_km'] ?? 99.0) as num).compareTo((b['distance_km'] ?? 99.0) as num));
+    final sortedRestaurants =
+    List<Map<String, dynamic>>.from(restaurants.map((r) => Map<String, dynamic>.from(r as Map)));
+    sortedRestaurants
+        .sort((a, b) => ((a['distance_km'] ?? 99.0) as num).compareTo((b['distance_km'] ?? 99.0) as num));
 
     showModalBottomSheet(
       context: context,
@@ -1121,16 +1726,19 @@ class ItineraryTab extends StatelessWidget {
         initialChildSize: 0.7,
         builder: (context, scrollController) {
           return Container(
-            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            decoration: const BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
             child: Column(
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                  decoration: const BoxDecoration(
+                      color: Colors.orange, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
                   child: Row(children: [
                     const Icon(Icons.restaurant, color: Colors.white),
                     const SizedBox(width: 8),
-                    Text('$mealType - Day $dayNumber', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text('$mealType - Day $dayNumber',
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                   ]),
                 ),
                 Expanded(
@@ -1145,7 +1753,8 @@ class ItineraryTab extends StatelessWidget {
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: ListTile(
                           contentPadding: const EdgeInsets.all(12),
-                          title: Text(r['name'] ?? 'Restaurant', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          title:
+                          Text(r['name'] ?? 'Restaurant', style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1166,7 +1775,8 @@ class ItineraryTab extends StatelessWidget {
                               Row(
                                 children: [
                                   Icon(Icons.attach_money, size: 14, color: Colors.green[700]),
-                                  Text(costDisplay, style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.w500)),
+                                  Text(costDisplay,
+                                      style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.w500)),
                                   const SizedBox(width: 12),
                                   Icon(Icons.directions_walk, size: 14, color: Colors.blue[600]),
                                   Text(' ${r['distance_km'] ?? '?'} km', style: TextStyle(color: Colors.blue[700])),
@@ -1192,7 +1802,6 @@ class ItineraryTab extends StatelessWidget {
   }
 
   void _openRestaurantOnMap(BuildContext context, Map<String, dynamic> restaurant) async {
-    // Try maps_link first (name-based search)
     final mapsLink = restaurant['maps_link'];
     if (mapsLink != null && mapsLink.toString().isNotEmpty) {
       try {
@@ -1206,7 +1815,6 @@ class ItineraryTab extends StatelessWidget {
       }
     }
 
-    // Fallback to coordinates
     final coords = restaurant['coordinates'] as Map<String, dynamic>?;
     if (coords != null && coords['lat'] != null && coords['lng'] != null) {
       final uri = Uri.parse('https://www.google.com/maps?q=${coords['lat']},${coords['lng']}');
@@ -1221,7 +1829,6 @@ class ItineraryTab extends StatelessWidget {
   // ========================================
 
   void _openDestinationOnMap(BuildContext context, Map<String, dynamic> item) async {
-    // Try maps_link first (name + city search - more accurate)
     final mapsLink = item['maps_link'];
     if (mapsLink != null && mapsLink.toString().isNotEmpty) {
       try {
@@ -1235,7 +1842,6 @@ class ItineraryTab extends StatelessWidget {
       }
     }
 
-    // Fallback to direct coordinate link
     final coords = item['coordinates'] as Map<String, dynamic>?;
     if (coords != null && coords['lat'] != null && coords['lng'] != null) {
       final lat = coords['lat'];
@@ -1252,23 +1858,11 @@ class ItineraryTab extends StatelessWidget {
       }
     }
 
-    // All failed - show error
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not open maps for ${item['title'] ?? 'destination'}'),
-          action: SnackBarAction(
-            label: 'Copy Coords',
-            onPressed: () {
-              if (coords != null) {
-                Clipboard.setData(ClipboardData(text: '${coords['lat']},${coords['lng']}'));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Coordinates copied!'), duration: Duration(seconds: 2)),
-                );
-              }
-            },
-          ),
-        ),
+      SweetAlertDialog.error(
+        context: context,
+        title: 'Cannot Open Maps',
+        subtitle: 'Could not open maps for ${item['title'] ?? 'destination'}',
       );
     }
   }
@@ -1329,12 +1923,14 @@ class ItineraryTab extends StatelessWidget {
                           children: [
                             Text(
                               item['title'] ?? 'Destination',
-                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+                              style:
+                              const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
                             ),
                             if (item['name_local'] != null && item['name_local'] != item['title'])
                               Text(
                                 item['name_local'],
-                                style: TextStyle(fontSize: 14, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                                style:
+                                TextStyle(fontSize: 14, color: Colors.grey[600], fontStyle: FontStyle.italic),
                               ),
                             const SizedBox(height: 4),
                             Wrap(
@@ -1370,7 +1966,8 @@ class ItineraryTab extends StatelessWidget {
                                         const SizedBox(width: 4),
                                         Text(
                                           'Matches Your Style',
-                                          style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.w600, fontSize: 10),
+                                          style: TextStyle(
+                                              color: Colors.green[700], fontWeight: FontWeight.w600, fontSize: 10),
                                         ),
                                       ],
                                     ),
@@ -1389,7 +1986,6 @@ class ItineraryTab extends StatelessWidget {
                         const Icon(Icons.star, color: Colors.amber, size: 18),
                         const SizedBox(width: 4),
                         Text(
-                          // FIX: Format rating to 1 decimal place
                           (item['rating'] is num)
                               ? (item['rating'] as num).toStringAsFixed(1)
                               : item['rating'].toString(),
@@ -1408,7 +2004,6 @@ class ItineraryTab extends StatelessWidget {
                       ),
                     ],
                   ),
-                  // Weather card for this destination
                   if (weather != null) ...[
                     const SizedBox(height: 16),
                     GestureDetector(
@@ -1417,7 +2012,6 @@ class ItineraryTab extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 20),
-                  // Cost card
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -1429,7 +2023,8 @@ class ItineraryTab extends StatelessWidget {
                       children: [
                         Container(
                           padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(color: Colors.green[200], borderRadius: BorderRadius.circular(10)),
+                          decoration:
+                          BoxDecoration(color: Colors.green[200], borderRadius: BorderRadius.circular(10)),
                           child: Icon(Icons.attach_money, color: Colors.green[800], size: 24),
                         ),
                         const SizedBox(width: 16),
@@ -1437,11 +2032,15 @@ class ItineraryTab extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Entrance Fee', style: TextStyle(fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.w500)),
+                              Text('Entrance Fee',
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.w500)),
                               const SizedBox(height: 4),
                               Text(
-                                item['currencyDisplay'] ?? 'RM ${item['estimatedCostMYR']?.toStringAsFixed(0) ?? item['avg_cost']?.toStringAsFixed(0) ?? '0'}',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green[900]),
+                                item['currencyDisplay'] ??
+                                    'RM ${item['estimatedCostMYR']?.toStringAsFixed(0) ?? item['avg_cost']?.toStringAsFixed(0) ?? '0'}',
+                                style:
+                                TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green[900]),
                               ),
                             ],
                           ),
@@ -1453,7 +2052,8 @@ class ItineraryTab extends StatelessWidget {
                     const SizedBox(height: 20),
                     const Text('About', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    Text(item['description'], style: TextStyle(fontSize: 15, color: Colors.grey[800], height: 1.6)),
+                    Text(item['description'],
+                        style: TextStyle(fontSize: 15, color: Colors.grey[800], height: 1.6)),
                   ],
                   if (item['tips'] != null && (item['tips'] as List).isNotEmpty) ...[
                     const SizedBox(height: 20),
@@ -1473,19 +2073,21 @@ class ItineraryTab extends StatelessWidget {
                           children: [
                             Icon(Icons.lightbulb, size: 16, color: Colors.amber[700]),
                             const SizedBox(width: 8),
-                            Expanded(child: Text(tip.toString(), style: TextStyle(fontSize: 13, color: Colors.grey[800]))),
+                            Expanded(
+                                child:
+                                Text(tip.toString(), style: TextStyle(fontSize: 13, color: Colors.grey[800]))),
                           ],
                         ),
                       );
                     }),
                   ],
                   const SizedBox(height: 24),
-                  // Map button
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       icon: const Icon(Icons.map, size: 20),
-                      label: const Text('View on Google Maps', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      label: const Text('View on Google Maps',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2196F3),
                         foregroundColor: Colors.white,
@@ -1543,8 +2145,10 @@ class ItineraryTab extends StatelessWidget {
             constraints: const BoxConstraints(),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: '${coords['lat']},${coords['lng']}'));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Coordinates copied!'), duration: Duration(seconds: 1)),
+              SweetAlertDialog.success(
+                context: context,
+                title: 'Copied!',
+                subtitle: 'Coordinates copied to clipboard',
               );
             },
           ),

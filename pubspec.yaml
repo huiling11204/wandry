@@ -61,6 +61,7 @@ dependencies:
   share_plus: ^10.1.2   # Required for the text-based share function
   open_file: ^3.3.2
   excel: ^4.0.0
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
