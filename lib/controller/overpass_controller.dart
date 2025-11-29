@@ -170,7 +170,12 @@ out center;
 
     for (var element in elements) {
       final tags = element['tags'] as Map<String, dynamic>? ?? {};
-      final name = tags['name'] ?? 'Unknown';
+      final name = tags['name'];
+
+      // Skip places without a name - no point showing "Unknown" places
+      if (name == null || name.toString().trim().isEmpty) {
+        continue;
+      }
 
       double? lat;
       double? lon;
@@ -200,6 +205,7 @@ out center;
       }
     }
 
-    return places.take(20).toList();
+    // Return all places with valid names - sorting by distance is done in the UI layer
+    return places;
   }
 }

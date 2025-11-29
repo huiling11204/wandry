@@ -3,11 +3,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../controller/wikipedia_controller.dart';
+import '../controller/place_image_controller.dart';
 import '../controller/overpass_controller.dart';
-import '../controller/trip_controller.dart';
 import '../controller/interaction_tracker.dart';
 import '../utilities/string_helper.dart';
 import '../utilities/icon_helper.dart';
@@ -58,7 +57,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
 
   Future<void> _initializeData() async {
     await Future.wait([
-      _fetchWikipediaData(),
+      _fetchImageAndWikipedia(),
       _fetchDetails(),
     ]);
     setState(() {
@@ -66,12 +65,17 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     });
   }
 
-  Future<void> _fetchWikipediaData() async {
+  Future<void> _fetchImageAndWikipedia() async {
     String placeName = StringHelper.extractEnglishPlaceName(widget.place);
+    if (placeName.isEmpty) {
+      placeName = widget.place['name']?.toString() ?? '';
+    }
+
     String country = StringHelper.getEnglishCountryName(
       widget.place['address'] as Map<String, dynamic>?,
     );
 
+    // Try Wikipedia first for description
     final wikiData = await WikipediaController.fetchWikipediaData(
       placeName,
       country,
@@ -82,9 +86,21 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
       _wikipediaDescription = wikiData['description'];
     });
 
+    // If no Wikipedia image, use PlaceImageController for better matching
     if (_imageUrl == null) {
+      final lat = widget.place['latitude'] ?? widget.place['lat'];
+      final lon = widget.place['longitude'] ?? widget.place['lon'];
+
+      final enhancedImageUrl = await PlaceImageController.getPlaceImage(
+        placeName: placeName,
+        placeType: widget.place['type']?.toString(),
+        latitude: lat is num ? lat.toDouble() : null,
+        longitude: lon is num ? lon.toDouble() : null,
+        country: country,
+      );
+
       setState(() {
-        _imageUrl = WikipediaController.getFallbackImageUrl(placeName);
+        _imageUrl = enhancedImageUrl;
       });
     }
   }
@@ -100,7 +116,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         _details = {
           'name': StringHelper.extractEnglishPlaceName(widget.place).isNotEmpty
               ? StringHelper.extractEnglishPlaceName(widget.place)
-              : 'Unknown',
+              : widget.place['name']?.toString() ?? 'Unknown',
           'description': _wikipediaDescription ??
               StringHelper.getSmartFallbackDescription(tags),
           'openingHours': 'Not available',
@@ -168,7 +184,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         _details = {
           'name': StringHelper.extractEnglishPlaceName(widget.place).isNotEmpty
               ? StringHelper.extractEnglishPlaceName(widget.place)
-              : 'Unknown',
+              : widget.place['name']?.toString() ?? 'Unknown',
           'description': _wikipediaDescription ??
               StringHelper.getSmartFallbackDescription(tags),
           'openingHours': 'Not available',
@@ -200,9 +216,74 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     }
   }
 
+  /// Open Google Maps with directions from current location
+  Future<void> _openDirections() async {
+    final lat = widget.place['latitude'] ?? widget.place['lat'];
+    final lon = widget.place['longitude'] ?? widget.place['lon'];
+
+    if (lat == null || lon == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location coordinates not available')),
+      );
+      return;
+    }
+
+    final googleMapsUrl = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=driving',
+    );
+
+    final googleMapsAppUrl = Uri.parse(
+      'google.navigation:q=$lat,$lon&mode=d',
+    );
+
+    try {
+      if (await canLaunchUrl(googleMapsAppUrl)) {
+        await launchUrl(googleMapsAppUrl);
+      } else if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+      } else {
+        final fallbackUrl = Uri.parse('https://www.google.com/maps?q=$lat,$lon');
+        await launchUrl(fallbackUrl, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open maps: $e')),
+        );
+      }
+    }
+  }
+
+  /// Open location on Google Maps (view only)
+  Future<void> _openOnMap() async {
+    final lat = widget.place['latitude'] ?? widget.place['lat'];
+    final lon = widget.place['longitude'] ?? widget.place['lon'];
+
+    if (lat == null || lon == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location coordinates not available')),
+      );
+      return;
+    }
+
+    final url = Uri.parse('https://www.google.com/maps?q=$lat,$lon');
+
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open maps: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _searchNearbyCategory(String category) async {
-    final lat = widget.place['latitude'];
-    final lon = widget.place['longitude'];
+    final lat = widget.place['latitude'] ?? widget.place['lat'];
+    final lon = widget.place['longitude'] ?? widget.place['lon'];
 
     if (lat == null || lon == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -214,24 +295,20 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => WillPopScope(
-        onWillPop: () async => false,
-        child: const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
-          ),
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
         ),
       ),
     );
 
     print('🔍 Searching for $category near location...');
-    print('📍 Coordinates: $lat, $lon');
 
     try {
       final results = await OverpassController.fetchNearbyCategory(
         category,
-        lat,
-        lon,
+        lat is num ? lat.toDouble() : 0.0,
+        lon is num ? lon.toDouble() : 0.0,
       );
 
       if (results.isEmpty) {
@@ -239,8 +316,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                  'No $category found within 2km. Try a different category.'),
+              content: Text('No $category found within 2km. Try a different category.'),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -257,8 +333,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         if (eleLat == 0.0 || eleLon == 0.0) continue;
 
         double distance = DistanceCalculator.calculateDistance(
-          lat,
-          lon,
+          lat is num ? lat.toDouble() : 0.0,
+          lon is num ? lon.toDouble() : 0.0,
           eleLat,
           eleLon,
         );
@@ -281,8 +357,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
           (a['distance'] as double).compareTo(b['distance'] as double));
       places = places.take(20).toList();
 
-      print('✅ Processed ${places.length} valid places');
-
       if (mounted) {
         Navigator.pop(context);
         _showNearbyResults(category, places);
@@ -293,9 +367,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text(
-                'Search temporarily unavailable. Please try again in a moment.'),
-            duration: const Duration(seconds: 4),
+            content: const Text('Search temporarily unavailable. Please try again.'),
             action: SnackBarAction(
               label: 'Retry',
               onPressed: () => _searchNearbyCategory(category),
@@ -323,17 +395,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
           StringHelper.containsLatinCharacters(tags['brand'].toString())) {
         return tags['brand'].toString();
       }
-      if (tags['operator'] != null &&
-          StringHelper.containsLatinCharacters(tags['operator'].toString())) {
-        return tags['operator'].toString();
-      }
-      if (tags['addr:street'] != null &&
-          StringHelper.containsLatinCharacters(
-              tags['addr:street'].toString())) {
-        String type = tags['amenity'] ?? tags['tourism'] ?? 'Place';
-        return '${_capitalize(type.toString())} on ${tags['addr:street']}';
-      }
-
       String type = tags['amenity']?.toString() ??
           tags['tourism']?.toString() ??
           tags['shop']?.toString() ??
@@ -351,7 +412,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
 
   Map<String, dynamic> _parseAddress(Map<String, dynamic>? tags) {
     if (tags == null) return {};
-
     return {
       'city': tags['addr:city'] ?? tags['city'] ?? '',
       'state': tags['addr:state'] ?? tags['state'] ?? '',
@@ -390,7 +450,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                   child: Row(
                     children: [
                       Icon(
-                        IconHelper.getCategoryIcon(category),
+                        IconHelper.getSearchCategoryIcon(category),
                         color: const Color(0xFF4A90E2),
                         size: 24,
                       ),
@@ -433,7 +493,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                       final place = places[index];
                       final distance = place['distance'];
                       final distanceText = distance != null
-                          ? '${(distance / 1000).toStringAsFixed(1)} km'
+                          ? '${distance.toStringAsFixed(2)} km'
                           : '';
 
                       return Card(
@@ -445,64 +505,76 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                         child: ListTile(
                           contentPadding: const EdgeInsets.all(12),
                           leading: Container(
-                            width: 56,
-                            height: 56,
+                            width: 48,
+                            height: 48,
                             decoration: BoxDecoration(
                               color: const Color(0xFF4A90E2).withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Icon(
-                              IconHelper.getCategoryIcon(category),
+                              IconHelper.getSearchCategoryIcon(category),
                               color: const Color(0xFF4A90E2),
-                              size: 28,
+                              size: 24,
                             ),
                           ),
                           title: Text(
-                            place['name']?.toString().split(',')[0] ??
-                                'Unknown',
+                            place['name']?.toString().split(',')[0] ?? 'Unknown',
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 16,
+                              fontSize: 15,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              if (distanceText.isNotEmpty)
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.location_on,
-                                      size: 14,
-                                      color: Color(0xFF4A90E2),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      distanceText,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
+                          subtitle: distanceText.isNotEmpty
+                              ? Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.directions_walk,
+                                    size: 14, color: Colors.blue[600]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  distanceText,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue[600],
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
+                              ],
+                            ),
+                          )
+                              : null,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Directions button
+                              IconButton(
+                                icon: Icon(Icons.directions,
+                                    color: Colors.blue[600], size: 22),
+                                onPressed: () {
+                                  final lat = place['latitude'];
+                                  final lon = place['longitude'];
+                                  if (lat != null && lon != null) {
+                                    final url = Uri.parse(
+                                      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=driving',
+                                    );
+                                    launchUrl(url, mode: LaunchMode.externalApplication);
+                                  }
+                                },
+                                tooltip: 'Get Directions',
+                              ),
+                              const Icon(Icons.arrow_forward_ios,
+                                  size: 16, color: Colors.grey),
                             ],
-                          ),
-                          trailing: const Icon(
-                            Icons.arrow_forward_ios,
-                            size: 16,
-                            color: Colors.grey,
                           ),
                           onTap: () {
                             Navigator.pop(context);
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) =>
-                                    PlaceDetailPage(place: place),
+                                builder: (context) => PlaceDetailPage(place: place),
                               ),
                             );
                           },
@@ -517,129 +589,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         );
       },
     );
-  }
-
-  Future<void> _addToTrip() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login first')),
-      );
-      return;
-    }
-
-    try {
-      final trips = await TripController.getUserTrips();
-
-      if (!mounted) return;
-
-      showModalBottomSheet(
-        context: context,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (context) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Add to Trip',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ...trips.map((tripDoc) {
-                  final tripData = tripDoc.data() as Map<String, dynamic>;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4A90E2).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.luggage,
-                        color: Color(0xFF4A90E2),
-                      ),
-                    ),
-                    title: Text(
-                      tripData['tripName']?.toString() ?? 'Unnamed Trip',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      '${tripData['startDate']?.toDate().toString().split(' ')[0] ?? ''} - ${tripData['endDate']?.toDate().toString().split(' ')[0] ?? ''}',
-                    ),
-                    onTap: () async {
-                      await _saveToTrip(tripDoc.id);
-                      if (mounted) Navigator.pop(context);
-                    },
-                  );
-                }),
-              ],
-            ),
-          );
-        },
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    }
-  }
-
-  Future<void> _saveToTrip(String tripId) async {
-    try {
-      final placeName = _details?['name']?.toString() ??
-          widget.place['name']?.toString() ??
-          'Unknown';
-
-      await TripController.addPlaceToTrip(
-        tripId: tripId,
-        placeName: placeName,
-        description: _details?['description']?.toString() ?? '',
-        latitude: widget.place['latitude'] ?? 0.0,
-        longitude: widget.place['longitude'] ?? 0.0,
-        openingHours: _details?['openingHours']?.toString() ?? '',
-        contactNo: _details?['phone']?.toString() ?? '',
-      );
-
-      // Track place added to trip
-      final tags = widget.place['tags'] as Map<String, dynamic>?;
-      final address = widget.place['address'] as Map<String, dynamic>?;
-
-      await InteractionTracker().trackPlaceAddedToTrip(
-        placeId: widget.place['osmId']?.toString() ?? 'unknown',
-        placeName: placeName,
-        category: tags?['tourism']?.toString() ??
-            tags?['amenity']?.toString() ??
-            'general',
-        tripId: tripId,
-        state: address?['state']?.toString(),
-        country: address?['country']?.toString(),
-      );
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Added to trip successfully!'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add: $e')),
-      );
-    }
   }
 
   @override
@@ -686,6 +635,25 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
               ),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              // Quick directions button in app bar
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  icon: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[600],
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.directions,
+                        color: Colors.white, size: 20),
+                  ),
+                  onPressed: _openDirections,
+                  tooltip: 'Get Directions',
+                ),
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: _imageUrl != null
                   ? Image.network(
@@ -697,14 +665,11 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                     color: Colors.grey[200],
                     child: Center(
                       child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes !=
-                            null
-                            ? loadingProgress
-                            .cumulativeBytesLoaded /
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
                             loadingProgress.expectedTotalBytes!
                             : null,
-                        valueColor:
-                        const AlwaysStoppedAnimation<Color>(
+                        valueColor: const AlwaysStoppedAnimation<Color>(
                             Color(0xFF4A90E2)),
                       ),
                     ),
@@ -766,7 +731,47 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                         ),
                       ],
                     ),
-                  const SizedBox(height: 16),
+
+                  const SizedBox(height: 20),
+
+                  // Action buttons - Equal width
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _openDirections,
+                          icon: const Icon(Icons.directions, size: 27),
+                          label: const Text('Directions'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue[600],
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _openOnMap,
+                          icon: const Icon(Icons.map_outlined, size: 18),
+                          label: const Text('View Map'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blue[600],
+                            side: BorderSide(color: Colors.blue[600]!, width: 1.5),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
                   const Text(
                     'Explore Nearby',
                     style: TextStyle(
@@ -829,10 +834,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  if (_details?['openingHours']?.toString() !=
-                      'Not available' &&
-                      _details?['openingHours']?.toString().isNotEmpty ==
-                          true)
+                  if (_details?['openingHours']?.toString() != 'Not available' &&
+                      _details?['openingHours']?.toString().isNotEmpty == true)
                     DetailRow(
                       icon: Icons.access_time,
                       label: 'Opening Hours',
@@ -848,8 +851,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                     ),
                   if (_details?['website']?.toString().isNotEmpty ?? false)
                     InkWell(
-                      onTap: () =>
-                          _launchURL(_details!['website'].toString()),
+                      onTap: () => _launchURL(_details!['website'].toString()),
                       child: DetailRow(
                         icon: Icons.language,
                         label: 'Website',
@@ -857,30 +859,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                         isLink: true,
                       ),
                     ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _addToTrip,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A90E2),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 2,
-                      ),
-                      child: const Text(
-                        'Add to Trip',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 20),
                 ],
               ),

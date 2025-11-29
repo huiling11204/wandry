@@ -22,6 +22,9 @@ class NearbyAttractionsPage extends StatefulWidget {
 }
 
 class _NearbyAttractionsPageState extends State<NearbyAttractionsPage> {
+  // Maximum items to keep in memory per category
+  static const int _maxItemsPerCategory = 50;
+
   List<Map<String, dynamic>> _attractions = [];
   List<Map<String, dynamic>> _food = [];
   List<Map<String, dynamic>> _accommodation = [];
@@ -29,10 +32,43 @@ class _NearbyAttractionsPageState extends State<NearbyAttractionsPage> {
   String? _error;
   String _loadingMessage = 'Searching...';
 
+  // Track how many items to show per section (for lazy rendering)
+  int _attractionsToShow = 6;
+  int _foodToShow = 6;
+  int _accommodationToShow = 6;
+
+  // Track total counts before limiting
+  int _totalAttractions = 0;
+  int _totalFood = 0;
+  int _totalAccommodation = 0;
+
   @override
   void initState() {
     super.initState();
     _searchNearbyAttractions();
+  }
+
+  List<Map<String, dynamic>> _processAndLimitPlaces(
+      List<Map<String, dynamic>> places,
+      double lat,
+      double lon,
+      ) {
+    // Calculate distances
+    for (var place in places) {
+      place['distance'] = DistanceCalculator.calculateDistance(
+        lat,
+        lon,
+        place['latitude'],
+        place['longitude'],
+      );
+    }
+
+    // Sort by distance
+    places.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
+
+    // Return limited list to prevent memory issues
+    // Takes top 50 closest places
+    return places.take(_maxItemsPerCategory).toList();
   }
 
   Future<void> _searchNearbyAttractions() async {
@@ -42,6 +78,9 @@ class _NearbyAttractionsPageState extends State<NearbyAttractionsPage> {
       _attractions = [];
       _food = [];
       _accommodation = [];
+      _attractionsToShow = 6;
+      _foodToShow = 6;
+      _accommodationToShow = 6;
       _loadingMessage = 'Searching for attractions...';
     });
 
@@ -54,61 +93,38 @@ class _NearbyAttractionsPageState extends State<NearbyAttractionsPage> {
       print('Location: $lat, $lon');
       print('Radius: $radius meters');
 
+      // Fetch attractions
       setState(() => _loadingMessage = 'Finding attractions...');
       print('Fetching attractions...');
-      final attractions = await OverpassController.fetchAttractions(lat, lon, radius);
-
-      // Calculate distances and sort
-      for (var place in attractions) {
-        place['distance'] = DistanceCalculator.calculateDistance(
-          lat,
-          lon,
-          place['latitude'],
-          place['longitude'],
-        );
-      }
-      attractions.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
-
+      final attractionsRaw = await OverpassController.fetchAttractions(lat, lon, radius);
+      _totalAttractions = attractionsRaw.length;
+      final attractions = _processAndLimitPlaces(attractionsRaw, lat, lon);
       setState(() => _attractions = attractions);
 
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 300));
 
+      // Fetch food
       setState(() => _loadingMessage = 'Finding food places...');
       print('Fetching food places...');
-      final food = await OverpassController.fetchFood(lat, lon, radius);
-
-      for (var place in food) {
-        place['distance'] = DistanceCalculator.calculateDistance(
-          lat,
-          lon,
-          place['latitude'],
-          place['longitude'],
-        );
-      }
-      food.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
-
+      final foodRaw = await OverpassController.fetchFood(lat, lon, radius);
+      _totalFood = foodRaw.length;
+      final food = _processAndLimitPlaces(foodRaw, lat, lon);
       setState(() => _food = food);
 
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 300));
 
+      // Fetch accommodation
       setState(() => _loadingMessage = 'Finding accommodations...');
       print('Fetching accommodations...');
-      final accommodation = await OverpassController.fetchAccommodation(lat, lon, radius);
-
-      for (var place in accommodation) {
-        place['distance'] = DistanceCalculator.calculateDistance(
-          lat,
-          lon,
-          place['latitude'],
-          place['longitude'],
-        );
-      }
-      accommodation.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
-
+      final accommodationRaw = await OverpassController.fetchAccommodation(lat, lon, radius);
+      _totalAccommodation = accommodationRaw.length;
+      final accommodation = _processAndLimitPlaces(accommodationRaw, lat, lon);
       setState(() => _accommodation = accommodation);
 
       print('Search completed successfully');
-      print('Found: ${_attractions.length} attractions, ${_food.length} food places, ${_accommodation.length} accommodations');
+      print('Found: $_totalAttractions attractions (showing ${_attractions.length}), '
+          '$_totalFood food places (showing ${_food.length}), '
+          '$_totalAccommodation accommodations (showing ${_accommodation.length})');
 
       setState(() {
         _isLoading = false;
@@ -262,43 +278,83 @@ class _NearbyAttractionsPageState extends State<NearbyAttractionsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_attractions.isNotEmpty) ...[
-                const Text(
-                  'Attractive Locations',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
+              // Search radius info
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
                 ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 18, color: Colors.blue[700]),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Showing closest ${_maxItemsPerCategory} places per category within ${widget.searchRadius.toInt()} km',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              if (_attractions.isNotEmpty) ...[
+                _buildSectionHeader('Attractive Locations', _attractions.length, _totalAttractions),
                 const SizedBox(height: 16),
-                _buildGridSection(_attractions),
+                _buildGridSection(_attractions, _attractionsToShow),
+                if (_attractionsToShow < _attractions.length) ...[
+                  const SizedBox(height: 12),
+                  _buildShowMoreButton(
+                    'Show More Attractions',
+                    _attractions.length - _attractionsToShow,
+                        () {
+                      setState(() {
+                        _attractionsToShow = (_attractionsToShow + 6).clamp(0, _attractions.length);
+                      });
+                    },
+                  ),
+                ],
                 const SizedBox(height: 32),
               ],
               if (_food.isNotEmpty) ...[
-                const Text(
-                  'Food Recommended',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
+                _buildSectionHeader('Food Recommended', _food.length, _totalFood),
                 const SizedBox(height: 16),
-                _buildGridSection(_food),
+                _buildGridSection(_food, _foodToShow),
+                if (_foodToShow < _food.length) ...[
+                  const SizedBox(height: 12),
+                  _buildShowMoreButton(
+                    'Show More Food Places',
+                    _food.length - _foodToShow,
+                        () {
+                      setState(() {
+                        _foodToShow = (_foodToShow + 6).clamp(0, _food.length);
+                      });
+                    },
+                  ),
+                ],
                 const SizedBox(height: 32),
               ],
               if (_accommodation.isNotEmpty) ...[
-                const Text(
-                  'Accommodation',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
+                _buildSectionHeader('Accommodation', _accommodation.length, _totalAccommodation),
                 const SizedBox(height: 16),
-                _buildGridSection(_accommodation),
+                _buildGridSection(_accommodation, _accommodationToShow),
+                if (_accommodationToShow < _accommodation.length) ...[
+                  const SizedBox(height: 12),
+                  _buildShowMoreButton(
+                    'Show More Accommodations',
+                    _accommodation.length - _accommodationToShow,
+                        () {
+                      setState(() {
+                        _accommodationToShow = (_accommodationToShow + 6).clamp(0, _accommodation.length);
+                      });
+                    },
+                  ),
+                ],
                 const SizedBox(height: 32),
               ],
               SizedBox(
@@ -331,7 +387,66 @@ class _NearbyAttractionsPageState extends State<NearbyAttractionsPage> {
     );
   }
 
-  Widget _buildGridSection(List<Map<String, dynamic>> places) {
+  Widget _buildSectionHeader(String title, int showingCount, int totalCount) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: Colors.black87,
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            totalCount > showingCount
+                ? '$showingCount of $totalCount'
+                : '$totalCount found',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Colors.blue[700],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShowMoreButton(String text, int remaining, VoidCallback onPressed) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.blue[600],
+          side: BorderSide(color: Colors.blue[300]!),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        child: Text(
+          '$text ($remaining more)',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridSection(List<Map<String, dynamic>> places, int itemsToShow) {
+    final displayCount = itemsToShow.clamp(0, places.length);
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -341,7 +456,7 @@ class _NearbyAttractionsPageState extends State<NearbyAttractionsPage> {
         mainAxisSpacing: 16,
         childAspectRatio: 0.85,
       ),
-      itemCount: places.length > 6 ? 6 : places.length,
+      itemCount: displayCount,
       itemBuilder: (context, index) {
         return PlaceCard(
           place: places[index],

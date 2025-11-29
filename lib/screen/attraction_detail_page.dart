@@ -1,11 +1,9 @@
 // lib/screen/attraction_detail_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../controller/wikipedia_controller.dart';
-import '../controller/trip_controller.dart';
+import '../controller/place_image_controller.dart';
 import '../utilities/string_helper.dart';
 import '../widget/detail_row.dart';
 
@@ -43,6 +41,7 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
   Future<void> _fetchWikipediaData() async {
     String placeName = StringHelper.extractEnglishPlaceName(widget.place);
 
+    // Try Wikipedia first
     final wikiData = await WikipediaController.fetchWikipediaData(placeName, null);
 
     setState(() {
@@ -50,9 +49,17 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
       _wikipediaDescription = wikiData['description'];
     });
 
+    // If no Wikipedia image, try our enhanced image controller
     if (_imageUrl == null) {
+      final enhancedImageUrl = await PlaceImageController.getPlaceImage(
+        placeName: placeName,
+        placeType: widget.place['type'],
+        latitude: widget.place['latitude'] ?? widget.place['lat'],
+        longitude: widget.place['longitude'] ?? widget.place['lon'],
+      );
+
       setState(() {
-        _imageUrl = WikipediaController.getFallbackImageUrl(placeName);
+        _imageUrl = enhancedImageUrl;
       });
     }
   }
@@ -105,110 +112,74 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
     }
   }
 
-  Future<void> _addToTrip() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
+  /// Open Google Maps with directions from current location
+  Future<void> _openDirections() async {
+    final lat = widget.place['latitude'] ?? widget.place['lat'];
+    final lon = widget.place['longitude'] ?? widget.place['lon'];
+    final name = _details?['name'] ?? widget.place['name'] ?? 'Destination';
+
+    if (lat == null || lon == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login first')),
+        const SnackBar(content: Text('Location coordinates not available')),
       );
       return;
     }
 
+    // Google Maps directions URL (will use current location as origin)
+    final googleMapsUrl = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=driving',
+    );
+
+    // Alternative: Open in Google Maps app with navigation
+    final googleMapsAppUrl = Uri.parse(
+      'google.navigation:q=$lat,$lon&mode=d',
+    );
+
     try {
-      final trips = await TripController.getUserTrips();
-
-      if (!mounted) return;
-
-      showModalBottomSheet(
-        context: context,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (context) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Add to Trip',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ...trips.map((tripDoc) {
-                  final tripData = tripDoc.data() as Map<String, dynamic>;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4A90E2).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.luggage,
-                        color: Color(0xFF4A90E2),
-                      ),
-                    ),
-                    title: Text(
-                      tripData['tripName']?.toString() ?? 'Unnamed Trip',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      '${tripData['startDate']?.toDate().toString().split(' ')[0] ?? ''} - ${tripData['endDate']?.toDate().toString().split(' ')[0] ?? ''}',
-                    ),
-                    onTap: () async {
-                      await _saveToTrip(tripDoc.id);
-                      if (mounted) Navigator.pop(context);
-                    },
-                  );
-                }),
-              ],
-            ),
-          );
-        },
-      );
+      // Try Google Maps app first (for Android)
+      if (await canLaunchUrl(googleMapsAppUrl)) {
+        await launchUrl(googleMapsAppUrl);
+      } else if (await canLaunchUrl(googleMapsUrl)) {
+        // Fallback to web URL
+        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+      } else {
+        // Final fallback: simple coordinates URL
+        final fallbackUrl = Uri.parse('https://www.google.com/maps?q=$lat,$lon');
+        await launchUrl(fallbackUrl, mode: LaunchMode.externalApplication);
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open maps: $e')),
+        );
+      }
     }
   }
 
-  Future<void> _saveToTrip(String tripId) async {
+  /// Open location on Google Maps (view only)
+  Future<void> _openOnMap() async {
+    final lat = widget.place['latitude'] ?? widget.place['lat'];
+    final lon = widget.place['longitude'] ?? widget.place['lon'];
+
+    if (lat == null || lon == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location coordinates not available')),
+      );
+      return;
+    }
+
+    final url = Uri.parse('https://www.google.com/maps?q=$lat,$lon');
+
     try {
-      await TripController.addPlaceToTrip(
-        tripId: tripId,
-        placeName: _details?['name']?.toString() ??
-            widget.place['name']?.toString() ??
-            'Unknown',
-        description: _details?['description']?.toString() ?? '',
-        latitude: widget.place['latitude'] ?? widget.place['lat'] ?? 0.0,
-        longitude: widget.place['longitude'] ?? widget.place['lon'] ?? 0.0,
-        openingHours: _details?['openingHours']?.toString() ?? '',
-        contactNo: _details?['phone']?.toString() ?? '',
-      );
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Added to trip successfully!'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open maps: $e')),
+        );
+      }
     }
   }
 
@@ -266,6 +237,24 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
               ),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              // Quick directions button in app bar
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  icon: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[600],
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.directions, color: Colors.white, size: 20),
+                  ),
+                  onPressed: _openDirections,
+                  tooltip: 'Get Directions',
+                ),
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: _imageUrl != null
                   ? Image.network(
@@ -365,6 +354,45 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
                     ),
                   ],
                   const SizedBox(height: 24),
+
+                  // Action buttons row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _openDirections,
+                          icon: const Icon(Icons.directions, size: 20),
+                          label: const Text('Get Directions'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue[600],
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _openOnMap,
+                          icon: const Icon(Icons.map, size: 20),
+                          label: const Text('View on Map'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blue[600],
+                            side: BorderSide(color: Colors.blue[600]!),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
                   const Text(
                     'About This Place',
                     style: TextStyle(
@@ -424,30 +452,6 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
                         isLink: true,
                       ),
                     ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _addToTrip,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A90E2),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 2,
-                      ),
-                      child: const Text(
-                        'Add to Trip',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 20),
                 ],
               ),
