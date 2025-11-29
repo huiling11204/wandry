@@ -57,6 +57,7 @@ class FeedbackController {
   }
 
   // Get all feedback for current user
+  // Get all feedback for current user
   Stream<List<FeedbackModel>> getUserFeedback() {
     final userEmail = getCurrentUserEmail();
     if (userEmail == null) {
@@ -66,6 +67,7 @@ class FeedbackController {
     return _firestore
         .collection('feedback')
         .where('userEmail', isEqualTo: userEmail)
+        .limit(50)  // ADD THIS LINE - Required by security rules
         .snapshots()
         .map((snapshot) {
       // Sort in memory instead of in query to avoid index requirement
