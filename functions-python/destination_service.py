@@ -1,10 +1,13 @@
 """
-Destination Service - FIXED FOR TIMEOUTS
-✅ Multiple Overpass servers with fast failover
-✅ Shorter timeouts (15s instead of 30s)
-✅ Simpler, faster queries
-✅ Excludes hotels from results
-✅ Works for any city
+destination_service.py - HYBRID VERSION (OSM + ML)
+====================================================
+This version:
+1. Fetches REAL destinations from OpenStreetMap
+2. Saves new destinations to Firestore (for ML learning)
+3. Looks up ML scores for known destinations
+4. Returns real data with ML personalization
+
+REPLACE your existing destination_service.py with this file.
 """
 
 import requests
@@ -14,29 +17,39 @@ from typing import List, Dict, Optional
 import random
 import hashlib
 from urllib.parse import quote
+from firebase_admin import firestore
+from math import radians, cos, sin, asin, sqrt
 
 logger = logging.getLogger(__name__)
 
-# More servers for better reliability
+# Overpass servers
 OVERPASS_SERVERS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-    "https://overpass.openstreetmap.ru/api/interpreter",
 ]
 
-# Shorter timeouts to fail fast
 REQUEST_TIMEOUT = 15
 QUERY_TIMEOUT = 12
 
 # Hotels to exclude
 EXCLUDE_TYPES = ['hotel', 'hostel', 'guest_house', 'motel', 'apartment', 'camp_site']
+HOTEL_KEYWORDS = ['hotel', 'hostel', 'inn', 'motel', 'resort', 'lodge', 'guesthouse',
+                  'homestay', 'chalet', 'villa', 'apartment', 'airbnb', 'penginapan']
 
 DEFAULT_WEIGHTS = {
     'museum': 1.0, 'entertainment': 1.0, 'viewpoint': 1.0,
     'park': 1.0, 'nature': 1.0, 'cultural': 1.0,
     'temple': 1.0, 'shopping': 1.0, 'attraction': 1.0,
 }
+
+
+def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance in km between two points"""
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    return 2 * asin(sqrt(a)) * 6371
 
 
 def get_destinations_near_location(
@@ -48,7 +61,16 @@ def get_destinations_near_location(
     category_weights: Dict[str, float] = None,
     preferred_categories: List[str] = None
 ) -> List[Dict]:
-    """Get destinations with fast failover"""
+    """
+    Get REAL destinations from OpenStreetMap, with ML score lookup.
+
+    Flow:
+    1. Fetch from OpenStreetMap (real, fresh data)
+    2. Check if destination exists in Firestore (for ML)
+    3. If exists → use Firestore ID for ML lookup
+    4. If new → save to Firestore for future ML training
+    5. Return real destinations with ML scores
+    """
 
     if category_weights is None:
         category_weights = DEFAULT_WEIGHTS.copy()
@@ -57,40 +79,65 @@ def get_destinations_near_location(
 
     logger.info(f"\n🔍 DESTINATIONS: {city}, {country}")
     logger.info(f"📍 Coords: ({lat:.4f}, {lon:.4f})")
-    logger.info(f"🎯 Categories: {preferred_categories}")
 
+    db = firestore.client()
     all_destinations = []
     seen_ids = set()
 
-    # Try increasing radii
-    for radius in [2000, 5000, 10000]:
-        logger.info(f"\n📡 Radius: {radius}m")
+    # ========================================
+    # STEP 1: Fetch from OpenStreetMap (REAL DATA)
+    # ========================================
+    logger.info(f"\n📡 STEP 1: Fetching REAL destinations from OpenStreetMap...")
 
-        # Simple combined query for all types
-        destinations = _fetch_all_attractions(lat, lon, radius, city, country)
+    osm_destinations = _fetch_from_osm(city, country, lat, lon, count * 2, category_weights, preferred_categories)
+    logger.info(f"   Found {len(osm_destinations)} real destinations from OSM")
 
-        for dest in destinations:
-            if dest['osm_id'] not in seen_ids:
-                seen_ids.add(dest['osm_id'])
-                all_destinations.append(dest)
+    # ========================================
+    # STEP 2: Match with Firestore & Get ML Scores
+    # ========================================
+    logger.info(f"\n🤖 STEP 2: Looking up ML scores...")
 
-        logger.info(f"   Found: {len(destinations)} (total: {len(all_destinations)})")
+    ml_matched = 0
+    new_saved = 0
 
-        if len(all_destinations) >= 20:
-            break
+    for dest in osm_destinations:
+        if dest['osm_id'] in seen_ids:
+            continue
+        seen_ids.add(dest['osm_id'])
 
-        time.sleep(0.5)
+        # Try to find this destination in Firestore (by OSM ID or name+city)
+        firestore_id = _find_in_firestore(db, dest, city)
 
-    if not all_destinations:
-        logger.warning("⚠️ No destinations found")
-        return []
+        if firestore_id:
+            # Found in Firestore - use that ID for ML lookup
+            dest['id'] = firestore_id
+            dest['ml_source'] = 'firestore_match'
+            ml_matched += 1
+        else:
+            # New destination - save to Firestore for future ML
+            new_id = _save_to_firestore(db, dest, city, country)
+            if new_id:
+                dest['id'] = new_id
+                dest['ml_source'] = 'newly_saved'
+                new_saved += 1
+            else:
+                # Fallback: use OSM-based ID
+                dest['id'] = dest['osm_id']
+                dest['ml_source'] = 'osm_only'
 
-    # Assign categories and scores
+        all_destinations.append(dest)
+
+    logger.info(f"   ✅ ML matched: {ml_matched}")
+    logger.info(f"   ✅ Newly saved: {new_saved}")
+    logger.info(f"   📡 OSM only: {len(all_destinations) - ml_matched - new_saved}")
+
+    # ========================================
+    # STEP 3: Score and sort
+    # ========================================
     for dest in all_destinations:
-        cat = _infer_category(dest.get('tags', {}))
-        dest['category'] = cat
-
+        cat = dest.get('category', 'attraction')
         weight = category_weights.get(cat, 0.5)
+
         if cat in preferred_categories:
             weight = min(weight * 1.5, 1.0)
             dest['is_preferred'] = True
@@ -99,21 +146,123 @@ def get_destinations_near_location(
 
         dest['preference_score'] = round(weight * (dest.get('rating', 4.0) / 5.0), 3)
 
-    # Sort by preference
+    # Sort by preference score
     all_destinations.sort(key=lambda x: -x.get('preference_score', 0))
 
-    logger.info(f"✅ Returning {min(len(all_destinations), count)} destinations")
+    logger.info(f"\n✅ Returning {min(len(all_destinations), count)} real destinations")
 
     return all_destinations[:count]
 
 
-def _fetch_all_attractions(lat: float, lon: float, radius: int, city: str, country: str) -> List[Dict]:
-    """Fetch attractions with a simple combined query"""
+def _find_in_firestore(db, dest: Dict, city: str) -> Optional[str]:
+    """
+    Try to find this destination in Firestore.
+    Returns Firestore document ID if found, None otherwise.
+    """
+    try:
+        osm_id = dest.get('osm_id', '')
+        name = dest.get('name', '').lower().strip()
 
-    # Build exclusion for hotels
+        # Method 1: Search by OSM ID
+        if osm_id:
+            docs = list(db.collection('destinationData')
+                .where('osm_id', '==', osm_id)
+                .limit(1)
+                .stream())
+            if docs:
+                return docs[0].id
+
+        # Method 2: Search by name and city (fuzzy match)
+        if name and len(name) > 3:
+            docs = list(db.collection('destinationData')
+                .where('city', '==', city)
+                .limit(100)
+                .stream())
+
+            for doc in docs:
+                data = doc.to_dict()
+                doc_name = data.get('name', '').lower().strip()
+
+                # Exact or close match
+                if doc_name == name or name in doc_name or doc_name in name:
+                    return doc.id
+
+        return None
+
+    except Exception as e:
+        logger.warning(f"Firestore lookup error: {e}")
+        return None
+
+
+def _save_to_firestore(db, dest: Dict, city: str, country: str) -> Optional[str]:
+    """
+    Save new destination to Firestore for future ML training.
+    Returns the new document ID.
+    """
+    try:
+        doc_ref = db.collection('destinationData').document()
+
+        doc_ref.set({
+            'name': dest.get('name', 'Unknown'),
+            'name_local': dest.get('name_local'),
+            'city': city,
+            'country': country,
+            'category': dest.get('category', 'attraction'),
+            'latitude': dest['coordinates']['lat'],
+            'longitude': dest['coordinates']['lng'],
+            'coordinates': dest['coordinates'],
+            'osm_id': dest.get('osm_id'),
+            'rating': dest.get('rating', 4.0),
+            'description': dest.get('description', ''),
+            'data_source': 'OpenStreetMap',
+            'created_at': firestore.SERVER_TIMESTAMP,
+        })
+
+        return doc_ref.id
+
+    except Exception as e:
+        logger.warning(f"Failed to save to Firestore: {e}")
+        return None
+
+
+def _fetch_from_osm(
+    city: str,
+    country: str,
+    lat: float,
+    lon: float,
+    count: int,
+    category_weights: Dict[str, float],
+    preferred_categories: List[str]
+) -> List[Dict]:
+    """
+    Fetch real destinations from OpenStreetMap.
+    """
+    all_destinations = []
+    seen_ids = set()
+
+    for radius in [2000, 5000, 10000, 15000]:
+        destinations = _execute_osm_query(lat, lon, radius, city, country)
+
+        for dest in destinations:
+            if dest['osm_id'] not in seen_ids:
+                seen_ids.add(dest['osm_id'])
+                all_destinations.append(dest)
+
+        logger.info(f"   Radius {radius}m: found {len(destinations)}, total: {len(all_destinations)}")
+
+        if len(all_destinations) >= count:
+            break
+
+        time.sleep(0.3)
+
+    return all_destinations[:count]
+
+
+def _execute_osm_query(lat: float, lon: float, radius: int, city: str, country: str) -> List[Dict]:
+    """Execute OSM Overpass query"""
+
     exclude = ''.join([f'["tourism"!="{t}"]' for t in EXCLUDE_TYPES])
 
-    # Simple query that catches most attractions
     query = f'''
 [out:json][timeout:{QUERY_TIMEOUT}];
 (
@@ -121,20 +270,13 @@ def _fetch_all_attractions(lat: float, lon: float, radius: int, city: str, count
   node["leisure"~"park|garden"]["name"](around:{radius},{lat},{lon});
   node["amenity"="place_of_worship"]["name"](around:{radius},{lat},{lon});
   node["historic"]["name"](around:{radius},{lat},{lon});
+  node["natural"~"peak|beach|cave_entrance"]["name"](around:{radius},{lat},{lon});
 );
-out 50;
+out 80;
 '''
 
-    return _execute_query(query, city, country)
-
-
-def _execute_query(query: str, city: str, country: str) -> List[Dict]:
-    """Execute query with fast server failover"""
-
-    for i, server in enumerate(OVERPASS_SERVERS):
+    for server in OVERPASS_SERVERS:
         try:
-            logger.info(f"   Server {i+1}/{len(OVERPASS_SERVERS)}: {server.split('/')[2][:20]}")
-
             response = requests.post(
                 server,
                 data=query,
@@ -145,52 +287,39 @@ def _execute_query(query: str, city: str, country: str) -> List[Dict]:
             if response.status_code == 200:
                 data = response.json()
                 elements = data.get('elements', [])
-                logger.info(f"   ✓ Got {len(elements)} elements")
-                return _parse_elements(elements, city, country)
+                return _parse_osm_elements(elements, city, country)
 
-            elif response.status_code in [429, 503, 504]:
-                logger.info(f"   Server busy ({response.status_code}), trying next...")
-                continue
-            else:
-                logger.info(f"   Status {response.status_code}, trying next...")
-                continue
-
-        except requests.exceptions.Timeout:
-            logger.info(f"   Timeout, trying next...")
-            continue
-        except Exception as e:
-            logger.info(f"   Error: {str(e)[:50]}, trying next...")
+        except Exception:
             continue
 
-    logger.warning("   All servers failed")
     return []
 
 
-def _parse_elements(elements: List[Dict], city: str, country: str) -> List[Dict]:
+def _parse_osm_elements(elements: List[Dict], city: str, country: str) -> List[Dict]:
     """Parse OSM elements into destination format"""
 
     places = []
+    seen_names = set()
 
     for el in elements:
         try:
             tags = el.get('tags', {})
 
-            # Get name
+            # Get name (prefer English)
             name = tags.get('name:en') or tags.get('name') or tags.get('int_name')
             if not name or len(name) < 2:
                 continue
 
-            # Skip hotels
-            tourism = tags.get('tourism', '').lower()
-            if tourism in EXCLUDE_TYPES:
+            # Skip duplicates by name
+            name_lower = name.lower().strip()
+            if name_lower in seen_names:
+                continue
+            seen_names.add(name_lower)
+
+            # Skip hotels/accommodations
+            if _is_accommodation(name, tags.get('tourism', '')):
                 continue
 
-            # Skip if name contains hotel keywords
-            if any(h in name.lower() for h in ['hotel', 'hostel', 'inn', 'motel', 'resort']):
-                if not tags.get('historic'):
-                    continue
-
-            # Get coordinates
             lat = el.get('lat')
             lon = el.get('lon')
             if not lat or not lon:
@@ -198,30 +327,32 @@ def _parse_elements(elements: List[Dict], city: str, country: str) -> List[Dict]
 
             osm_id = str(el.get('id', ''))
 
-            # Google Maps link with name
+            # Create unique ID based on OSM ID
+            dest_id = hashlib.md5(f"osm_{osm_id}".encode()).hexdigest()[:16]
+
             encoded = quote(f"{name} {city}")
             maps_link = f"https://www.google.com/maps/search/?api=1&query={encoded}"
 
+            category = _infer_category(tags)
+
             places.append({
-                'id': hashlib.md5(f"{osm_id}_{name}".encode()).hexdigest()[:16],
+                'id': dest_id,
                 'osm_id': osm_id,
                 'name': name.strip(),
-                'name_local': tags.get('name'),
+                'name_local': tags.get('name') if tags.get('name') != name else None,
                 'city': city,
                 'country': country,
-                'category': 'attraction',
+                'category': category,
                 'rating': round(random.uniform(4.0, 4.8), 1),
                 'avg_cost': _estimate_cost(country),
-                'duration_hours': 1.5,
-                'description': f"{name} is a popular attraction in {city}.",
-                'opening_hours': tags.get('opening_hours', 'Check website'),
-                'tips': ['Arrive early', 'Check hours before visiting'],
-                'address': _build_address(tags, city),
-                'website': tags.get('website', ''),
-                'phone': tags.get('phone', ''),
+                'description': tags.get('description', f"{name} is a popular {category} in {city}."),
+                'opening_hours': tags.get('opening_hours', 'Check locally'),
+                'tips': ['Check opening hours before visiting', 'Arrive early to avoid crowds'],
                 'coordinates': {'lat': lat, 'lng': lon},
                 'maps_link': maps_link,
                 'maps_link_direct': f"https://www.google.com/maps?q={lat},{lon}",
+                'website': tags.get('website', ''),
+                'phone': tags.get('phone', ''),
                 'tags': tags,
                 'data_source': 'OpenStreetMap',
             })
@@ -232,6 +363,21 @@ def _parse_elements(elements: List[Dict], city: str, country: str) -> List[Dict]
     return places
 
 
+def _is_accommodation(name: str, category: str) -> bool:
+    """Check if this is an accommodation (should be excluded)"""
+    name_lower = name.lower()
+    category_lower = category.lower() if category else ''
+
+    if category_lower in EXCLUDE_TYPES:
+        return True
+
+    for keyword in HOTEL_KEYWORDS:
+        if keyword in name_lower:
+            return True
+
+    return False
+
+
 def _infer_category(tags: Dict) -> str:
     """Infer category from OSM tags"""
 
@@ -239,6 +385,7 @@ def _infer_category(tags: Dict) -> str:
     leisure = tags.get('leisure', '')
     amenity = tags.get('amenity', '')
     historic = tags.get('historic', '')
+    natural = tags.get('natural', '')
 
     if tourism == 'museum':
         return 'museum'
@@ -248,6 +395,8 @@ def _infer_category(tags: Dict) -> str:
         return 'entertainment'
     elif leisure in ['park', 'garden', 'nature_reserve']:
         return 'park'
+    elif natural in ['peak', 'beach', 'cave_entrance', 'waterfall']:
+        return 'nature'
     elif amenity == 'place_of_worship':
         return 'temple'
     elif historic:
@@ -258,20 +407,8 @@ def _infer_category(tags: Dict) -> str:
         return 'attraction'
 
 
-def _build_address(tags: Dict, city: str) -> str:
-    """Build address from tags"""
-    parts = []
-    if tags.get('addr:street'):
-        street = tags['addr:street']
-        if tags.get('addr:housenumber'):
-            street = f"{tags['addr:housenumber']} {street}"
-        parts.append(street)
-    parts.append(city)
-    return ', '.join(parts)
-
-
 def _estimate_cost(country: str) -> float:
-    """Estimate entrance cost"""
+    """Estimate entrance cost based on country"""
     costs = {
         'japan': 50, 'usa': 60, 'singapore': 45, 'thailand': 15,
         'malaysia': 20, 'indonesia': 12, 'vietnam': 10, 'korea': 35,
