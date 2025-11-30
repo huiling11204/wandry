@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import 'sweet_alert_dialog.dart';
 
 /// ROBUST Accommodation Tab with Fallback Support
 /// ✅ Works with OLD and NEW backend
 /// ✅ Generates URLs on-the-fly if missing
 /// ✅ Better error messages
 /// ✅ Debug logging
+/// ✅ SweetAlert confirmation before external links
 class AccommodationTab extends StatefulWidget {
   final String tripId;
 
@@ -618,7 +620,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
-                  onPressed: () => _launchURL(mapsLink),
+                  onPressed: () => _showExternalLinkDialog('Google Maps', mapsLink),
                 ),
               ),
               if (phone.isNotEmpty) ...[
@@ -645,7 +647,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                     ),
-                    onPressed: () => _launchURL(website),
+                    onPressed: () => _showExternalLinkDialog(name, website),
                   ),
                 ),
               ],
@@ -803,7 +805,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
         );
       },
       child: ElevatedButton(
-        onPressed: () => _launchBookingURL(directUrl, label),
+        onPressed: () => _showExternalLinkDialog(label, directUrl),
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,
@@ -906,7 +908,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 Navigator.pop(context);
-                _launchBookingURL(directUrl, platform);
+                _showExternalLinkDialog(platform, directUrl);
               },
             ),
 
@@ -926,7 +928,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
               onTap: () {
                 Navigator.pop(context);
                 debugPrint('🔍 Launching Google search: $googleUrl');
-                _launchBookingURL(googleUrl, 'Google Search');
+                _showExternalLinkDialog('Google Search', googleUrl);
               },
             ),
 
@@ -946,13 +948,67 @@ class _AccommodationTabState extends State<AccommodationTab> {
               onTap: () {
                 Navigator.pop(context);
                 debugPrint('🏙️ Launching city search: $cityUrl');
-                _launchBookingURL(cityUrl, platform);
+                _showExternalLinkDialog(platform, cityUrl);
               },
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// ✅ NEW: Show confirmation dialog before opening external link
+  Future<void> _showExternalLinkDialog(String siteName, String url) async {
+    if (url.isEmpty) return;
+
+    final result = await SweetAlertDialog.show(
+      context: context,
+      type: SweetAlertType.info,
+      title: 'Leaving Wandry',
+      subtitle: 'You are about to visit $siteName. This will open in your browser.',
+      content: Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.link, color: Colors.grey[600], size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _getShortenedUrl(url),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  fontFamily: 'monospace',
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+      confirmText: 'Open',
+      cancelText: 'Cancel',
+      showCancelButton: true,
+    );
+
+    if (result == true) {
+      _launchBookingURL(url, siteName);
+    }
+  }
+
+  /// ✅ NEW: Get shortened URL for display
+  String _getShortenedUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return uri.host + (uri.path.length > 20 ? '${uri.path.substring(0, 20)}...' : uri.path);
+    } catch (e) {
+      return url.length > 40 ? '${url.substring(0, 40)}...' : url;
+    }
   }
 
   Future<void> _launchBookingURL(String url, String platform) async {
@@ -976,36 +1032,30 @@ class _AccommodationTabState extends State<AccommodationTab> {
         } else {
           debugPrint('❌ Failed to launch $platform');
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Could not open $platform'),
-                action: SnackBarAction(
-                  label: 'Copy URL',
-                  onPressed: () {
-                    // In real app, copy to clipboard
-                    debugPrint('URL to copy: $url');
-                  },
-                ),
-              ),
+            SweetAlertDialog.error(
+              context: context,
+              title: 'Cannot Open Link',
+              subtitle: 'Could not open $platform. Please try again later.',
             );
           }
         }
       } else {
         debugPrint('❌ Cannot launch $platform - URL not supported');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Cannot open $platform - invalid URL')),
+          SweetAlertDialog.error(
+            context: context,
+            title: 'Cannot Open Link',
+            subtitle: 'Cannot open $platform - invalid URL.',
           );
         }
       }
     } catch (e) {
       debugPrint('❌ Error launching $platform: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            duration: const Duration(seconds: 5),
-          ),
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Error',
+          subtitle: 'An error occurred: $e',
         );
       }
     }

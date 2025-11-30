@@ -1,11 +1,7 @@
 // lib/widget/itinerary_tab.dart
-// COMPLETE VERSION: With Drag-to-Reorder functionality + SweetAlert dialogs
-// Features:
-// - Drag destinations to reorder within same day
-// - Distance validation with warnings (FIXED)
-// - Meals are locked (cannot be dragged)
-// - Auto-recalculate travel times after reorder
-// - Beautiful SweetAlert-style dialogs
+// FIXED VERSION: Resolved RenderFlex overflow issues during reordering
+// Enhanced UI with better spacing and responsive layouts
+// Added SweetAlert confirmation before external links
 
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -76,7 +72,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
 
   @override
   Widget build(BuildContext context) {
-    // 1. Fetch Trip Data for Dates AND Destination Types
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('trip').doc(widget.tripId).snapshots(),
       builder: (context, tripSnapshot) {
@@ -88,16 +83,13 @@ class _ItineraryTabState extends State<ItineraryTab> {
           startDate = (tripData['startDate'] as Timestamp).toDate();
         }
 
-        // Get destination types from trip data
         final destinationTypes = (tripData['destinationTypesApplied'] as List?)?.cast<String>() ??
             (tripData['destinationTypes'] as List?)?.cast<String>() ??
             [];
 
-        // Get city for edit functionality
         final city = tripData['city'] ?? tripData['destinationCity'] ?? '';
         final country = tripData['country'] ?? tripData['destinationCountry'] ?? '';
 
-        // 2. Fetch Accommodation Data for "Start from Hotel" card
         return StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance.collection('accommodation').doc(widget.tripId).snapshots(),
           builder: (context, accommodationSnapshot) {
@@ -111,7 +103,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
               }
             }
 
-            // 3. Fetch Itinerary Items
             return StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('itineraryItem')
@@ -133,17 +124,14 @@ class _ItineraryTabState extends State<ItineraryTab> {
 
                 for (var item in items) {
                   final data = item.data() as Map<String, dynamic>;
-                  // Separate skipped items
                   if (data['isSkipped'] == true) {
                     skippedItems.add(item);
                     continue;
                   }
-
                   final day = data['dayNumber'] as int;
                   groupedByDay.putIfAbsent(day, () => []).add(item);
                 }
 
-                // +1 for header, +1 for skipped section if exists
                 final hasSkippedItems = skippedItems.isNotEmpty;
                 final totalItems = groupedByDay.length + 1 + (hasSkippedItems ? 1 : 0);
 
@@ -153,12 +141,10 @@ class _ItineraryTabState extends State<ItineraryTab> {
                       padding: const EdgeInsets.all(16),
                       itemCount: totalItems,
                       itemBuilder: (context, index) {
-                        // First item: Show trip style header
                         if (index == 0) {
                           return _buildTripStyleHeader(context, destinationTypes, tripData);
                         }
 
-                        // Last item: Show skipped activities section (if any)
                         if (hasSkippedItems && index == totalItems - 1) {
                           return _buildSkippedSection(context, skippedItems, widget.tripId);
                         }
@@ -167,14 +153,12 @@ class _ItineraryTabState extends State<ItineraryTab> {
                         final day = groupedByDay.keys.elementAt(dayIndex);
                         final dayItems = groupedByDay[day]!;
 
-                        // Date Logic
                         String dateString = '';
                         if (startDate != null) {
                           final date = startDate.add(Duration(days: day - 1));
                           dateString = DateFormat('EEEE, d MMM').format(date);
                         }
 
-                        // Weather Logic - get from first item that has weather
                         Map<String, dynamic>? dayWeather;
                         for (var item in dayItems) {
                           final data = item.data() as Map<String, dynamic>;
@@ -195,12 +179,8 @@ class _ItineraryTabState extends State<ItineraryTab> {
                               dayWeather,
                               accommodationData,
                             ),
-
-                            // ACCOMMODATION CARD (Start of Route) - only on Day 1
                             if (day == 1 && accommodationData != null)
                               _buildAccommodationEntry(context, accommodationData),
-
-                            // Day items with reorder capability
                             _buildDayItemsList(
                               context,
                               day,
@@ -209,14 +189,11 @@ class _ItineraryTabState extends State<ItineraryTab> {
                               country,
                               accommodationData,
                             ),
-
                             const SizedBox(height: 16),
                           ],
                         );
                       },
                     ),
-
-                    // Loading overlay
                     if (_isProcessing)
                       Container(
                         color: Colors.black.withOpacity(0.3),
@@ -246,7 +223,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
     );
   }
 
-  /// Build the day items list with reorder capability
   Widget _buildDayItemsList(
       BuildContext context,
       int day,
@@ -257,14 +233,11 @@ class _ItineraryTabState extends State<ItineraryTab> {
       ) {
     final isReordering = _reorderingDay == day;
 
-    // Separate draggable items (attractions) from non-draggable items (meals)
-    final List<DocumentSnapshot> allItems = dayItems;
-
     if (isReordering) {
-      return _buildReorderableList(context, day, allItems, city, country, accommodationData);
+      return _buildReorderableList(context, day, dayItems, city, country, accommodationData);
     } else {
       return Column(
-        children: allItems.map((item) {
+        children: dayItems.map((item) {
           final data = item.data() as Map<String, dynamic>;
           return _buildItineraryCard(context, data, item.id, city, country);
         }).toList(),
@@ -272,7 +245,7 @@ class _ItineraryTabState extends State<ItineraryTab> {
     }
   }
 
-  /// Build reorderable list for a specific day
+  /// FIXED: Enhanced reorderable list with better UI and no overflow
   Widget _buildReorderableList(
       BuildContext context,
       int day,
@@ -283,63 +256,84 @@ class _ItineraryTabState extends State<ItineraryTab> {
       ) {
     return Column(
       children: [
-        // Instructions banner
+        // Enhanced instructions banner
         Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [Colors.purple[50]!, Colors.purple[100]!],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.purple[300]!),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.purple[300]!, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.purple.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          child: Row(
+          child: Column(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.purple[200],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.drag_indicator, color: Colors.purple[700], size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Drag to Reorder',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple[900],
-                        fontSize: 14,
-                      ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.purple[200],
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    Text(
-                      'Drag attractions up/down. Meals are locked.',
-                      style: TextStyle(fontSize: 11, color: Colors.purple[700]),
+                    child: Icon(Icons.drag_indicator, color: Colors.purple[700], size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Reorder Mode Active',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.purple[900],
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Hold and drag attractions to reorder',
+                          style: TextStyle(fontSize: 12, color: Colors.purple[700]),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              ElevatedButton.icon(
-                onPressed: () => setState(() => _reorderingDay = null),
-                icon: const Icon(Icons.check, size: 16),
-                label: const Text('Done'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple[600],
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => setState(() => _reorderingDay = null),
+                  icon: const Icon(Icons.check_circle, size: 20),
+                  label: const Text('Done Reordering'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple[600],
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
                 ),
               ),
             ],
           ),
         ),
 
-        // Reorderable list
+        // Reorderable list with fixed layout
         ReorderableListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -351,12 +345,16 @@ class _ItineraryTabState extends State<ItineraryTab> {
             return AnimatedBuilder(
               animation: animation,
               builder: (context, child) {
-                final double elevation = Tween<double>(begin: 0, end: 8).evaluate(animation);
-                return Material(
-                  elevation: elevation,
-                  borderRadius: BorderRadius.circular(12),
-                  shadowColor: Colors.purple.withOpacity(0.3),
-                  child: child,
+                final double elevation = Tween<double>(begin: 0, end: 12).evaluate(animation);
+                final double scale = Tween<double>(begin: 1.0, end: 1.02).evaluate(animation);
+                return Transform.scale(
+                  scale: scale,
+                  child: Material(
+                    elevation: elevation,
+                    borderRadius: BorderRadius.circular(16),
+                    shadowColor: Colors.purple.withOpacity(0.4),
+                    child: child,
+                  ),
                 );
               },
               child: child,
@@ -366,7 +364,8 @@ class _ItineraryTabState extends State<ItineraryTab> {
             final item = dayItems[index];
             final data = item.data() as Map<String, dynamic>;
             final category = data['category'] as String? ?? 'attraction';
-            final isMeal = ['breakfast', 'lunch', 'dinner', 'meal', 'cafe', 'snack'].contains(category.toLowerCase());
+            final isMeal = ['breakfast', 'lunch', 'dinner', 'meal', 'cafe', 'snack']
+                .contains(category.toLowerCase());
 
             return _buildReorderableItem(
               key: ValueKey(item.id),
@@ -383,7 +382,7 @@ class _ItineraryTabState extends State<ItineraryTab> {
     );
   }
 
-  /// Build a single reorderable item
+  /// FIXED: Completely redesigned reorderable item to prevent overflow
   Widget _buildReorderableItem({
     required Key key,
     required Map<String, dynamic> data,
@@ -395,127 +394,239 @@ class _ItineraryTabState extends State<ItineraryTab> {
   }) {
     final category = data['category'] as String? ?? 'attraction';
     final categoryColor = IconHelper.getCategoryColor(category);
+    final title = data['title'] ?? 'Activity';
+    final startTime = data['startTime'] ?? '';
+    final endTime = data['endTime'] ?? '';
+    final distanceKm = data['distanceKm'];
 
     return Container(
       key: key,
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          // Drag handle (only for non-meals)
-          if (!isMeal)
-            ReorderableDragStartListener(
-              index: index,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.purple[50],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.drag_indicator,
-                  color: Colors.purple[400],
-                ),
-              ),
-            )
-          else
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.lock_outline,
-                color: Colors.grey[400],
-                size: 24,
-              ),
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isMeal ? Colors.grey[300]! : Colors.purple.withOpacity(0.3),
+              width: isMeal ? 1 : 2,
             ),
-
-          const SizedBox(width: 8),
-
-          // Card content
-          Expanded(
-            child: Card(
-              elevation: isMeal ? 1 : 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: isMeal ? Colors.grey[300]! : Colors.purple.withOpacity(0.3),
-                  width: isMeal ? 1 : 2,
-                ),
+            boxShadow: [
+              BoxShadow(
+                color: (isMeal ? Colors.grey : Colors.purple).withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: categoryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    IconHelper.getCategoryIcon(category),
-                    color: categoryColor,
-                    size: 20,
-                  ),
-                ),
-                title: Text(
-                  data['title'] ?? 'Activity',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: isMeal ? Colors.grey[600] : Colors.black87,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Row(
-                  children: [
-                    Text(
-                      '${data['startTime']} - ${data['endTime']}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    if (data['distanceKm'] != null) ...[
-                      const SizedBox(width: 8),
-                      Icon(Icons.directions_car, size: 12, color: Colors.blue[400]),
-                      Text(
-                        ' ${data['distanceKm']} km',
-                        style: TextStyle(fontSize: 11, color: Colors.blue[600]),
-                      ),
-                    ],
-                  ],
-                ),
-                trailing: isMeal
-                    ? Tooltip(
-                  message: 'Meals cannot be reordered',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.restaurant, size: 14, color: Colors.grey[500]),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Locked',
-                          style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Left side: Drag handle or lock indicator
+                  if (!isMeal)
+                    ReorderableDragStartListener(
+                      index: index,
+                      child: Container(
+                        width: 48,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Colors.purple[50]!, Colors.purple[100]!],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
                         ),
-                      ],
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.drag_indicator,
+                              color: Colors.purple[400],
+                              size: 24,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'DRAG',
+                              style: TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple[400],
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.lock_outline,
+                            color: Colors.grey[400],
+                            size: 22,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'FIXED',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[400],
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Main content area - FIXED: Using Expanded properly
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Title row with category icon
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: categoryColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  IconHelper.getCategoryIcon(category),
+                                  color: categoryColor,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: isMeal ? Colors.grey[600] : Colors.black87,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Time and distance - FIXED: Wrap instead of Row
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 6,
+                            children: [
+                              // Time chip
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.access_time, size: 12, color: Colors.grey[600]),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '$startTime - $endTime',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Distance chip (if available)
+                              if (distanceKm != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue[50],
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.directions_car, size: 12, color: Colors.blue[600]),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '$distanceKm km',
+                                        style: TextStyle(fontSize: 11, color: Colors.blue[700]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              // Meal locked indicator
+                              if (isMeal)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange[50],
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.restaurant, size: 12, color: Colors.orange[600]),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Meal time locked',
+                                        style: TextStyle(fontSize: 11, color: Colors.orange[700]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                )
-                    : Icon(Icons.swap_vert, size: 20, color: Colors.purple[400]),
+
+                  // Right side: Reorder indicator
+                  if (!isMeal)
+                    Container(
+                      width: 36,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.purple[50]!, Colors.purple[100]!],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.swap_vert, size: 20, color: Colors.purple[400]),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  /// Handle reorder action with distance validation - FIXED VERSION
+  /// Handle reorder action with distance validation
   Future<void> _handleReorder(
       BuildContext context,
       int day,
@@ -524,7 +635,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
       int newIndex,
       Map<String, dynamic>? accommodationData,
       ) async {
-    // Adjust newIndex for ReorderableListView behavior
     if (newIndex > oldIndex) {
       newIndex -= 1;
     }
@@ -535,7 +645,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
     final movedData = movedItem.data() as Map<String, dynamic>;
     final movedCategory = movedData['category'] as String? ?? 'attraction';
 
-    // Check if it's a meal (shouldn't happen due to UI, but double-check)
     if (['breakfast', 'lunch', 'dinner', 'meal', 'cafe', 'snack'].contains(movedCategory.toLowerCase())) {
       await SweetAlertDialog.warning(
         context: context,
@@ -545,7 +654,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
       return;
     }
 
-    // Calculate distance impact - ALWAYS SHOW THE WARNING DIALOG
     final distanceInfo = _calculateDistanceImpact(
       dayItems,
       oldIndex,
@@ -553,7 +661,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
       accommodationData,
     );
 
-    // Always show the route warning dialog (even for small changes)
     final confirmed = await RouteWarningDialog.show(
       context: context,
       itemName: movedData['title'] ?? 'Activity',
@@ -565,11 +672,9 @@ class _ItineraryTabState extends State<ItineraryTab> {
 
     if (confirmed != true) return;
 
-    // Perform the reorder
     await _performReorder(day, dayItems, oldIndex, newIndex);
   }
 
-  /// Calculate distance impact of reordering - IMPROVED VERSION
   Map<String, dynamic> _calculateDistanceImpact(
       List<DocumentSnapshot> dayItems,
       int oldIndex,
@@ -579,10 +684,8 @@ class _ItineraryTabState extends State<ItineraryTab> {
     double oldTotalDistance = 0;
     double newTotalDistance = 0;
 
-    // Get coordinates for all items including hotel
     List<Map<String, double>> coords = [];
 
-    // Add hotel/starting point if available
     if (accommodationData != null) {
       final hotelCoords = accommodationData['coordinates'] as Map<String, dynamic>?;
       if (hotelCoords != null) {
@@ -597,9 +700,7 @@ class _ItineraryTabState extends State<ItineraryTab> {
       }
     }
 
-    // If no hotel, add a placeholder
     if (coords.isEmpty) {
-      // Use first item's coords as starting point
       for (var item in dayItems) {
         final data = item.data() as Map<String, dynamic>;
         final itemCoords = data['coordinates'] as Map<String, dynamic>?;
@@ -617,7 +718,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
       }
     }
 
-    // Add all item coordinates
     for (var item in dayItems) {
       final data = item.data() as Map<String, dynamic>;
       final itemCoords = data['coordinates'] as Map<String, dynamic>?;
@@ -629,12 +729,10 @@ class _ItineraryTabState extends State<ItineraryTab> {
           'lng': (lng is num) ? lng.toDouble() : 0.0,
         });
       } else {
-        // Use previous coords or zeros
         coords.add(coords.isNotEmpty ? coords.last : {'lat': 0.0, 'lng': 0.0});
       }
     }
 
-    // Calculate old total distance
     for (int i = 1; i < coords.length; i++) {
       if (coords[i]['lat'] != 0 && coords[i]['lng'] != 0 &&
           coords[i - 1]['lat'] != 0 && coords[i - 1]['lng'] != 0) {
@@ -647,18 +745,13 @@ class _ItineraryTabState extends State<ItineraryTab> {
       }
     }
 
-    // Create reordered coordinates list
     List<Map<String, double>> newCoords = [];
-
-    // Add starting point (hotel or first destination)
     if (coords.isNotEmpty) {
       newCoords.add(coords[0]);
     }
 
-    // Get just the item coords (excluding starting point)
     int startOffset = accommodationData != null ? 1 : 0;
     if (coords.length <= startOffset) {
-      // Not enough coords to calculate
       return {
         'oldDistance': 0.0,
         'newDistance': 0.0,
@@ -672,7 +765,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
       itemCoords.add(Map<String, double>.from(coords[i]));
     }
 
-    // Perform the reorder on itemCoords
     if (oldIndex < itemCoords.length) {
       final movedCoord = itemCoords.removeAt(oldIndex);
       final insertAt = newIndex > oldIndex ? newIndex - 1 : newIndex;
@@ -681,14 +773,12 @@ class _ItineraryTabState extends State<ItineraryTab> {
       }
     }
 
-    // Build new coords list
     if (accommodationData != null && coords.isNotEmpty) {
       newCoords = [coords[0], ...itemCoords];
     } else {
       newCoords = itemCoords;
     }
 
-    // Calculate new total distance
     for (int i = 1; i < newCoords.length; i++) {
       if (newCoords[i]['lat'] != 0 && newCoords[i]['lng'] != 0 &&
           newCoords[i - 1]['lat'] != 0 && newCoords[i - 1]['lng'] != 0) {
@@ -702,7 +792,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
     }
 
     final addedDistance = newTotalDistance - oldTotalDistance;
-    // Assuming average speed of 25 km/h in city + 10 min buffer
     final addedTime = ((addedDistance / 25) * 60).round();
 
     return {
@@ -713,9 +802,8 @@ class _ItineraryTabState extends State<ItineraryTab> {
     };
   }
 
-  /// Haversine formula for distance calculation
   double _haversineDistance(double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadius = 6371; // km
+    const double earthRadius = 6371;
 
     final dLat = _toRadians(lat2 - lat1);
     final dLon = _toRadians(lon2 - lon1);
@@ -731,7 +819,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
     return degree * 3.141592653589793 / 180;
   }
 
-  /// Perform the actual reorder in Firestore
   Future<void> _performReorder(
       int day,
       List<DocumentSnapshot> dayItems,
@@ -741,19 +828,16 @@ class _ItineraryTabState extends State<ItineraryTab> {
     setState(() => _isProcessing = true);
 
     try {
-      // Get all items that need updating
       final List<DocumentSnapshot> updatedOrder = List.from(dayItems);
       final movedItem = updatedOrder.removeAt(oldIndex);
       updatedOrder.insert(newIndex, movedItem);
 
-      // Call the controller to perform the reorder
       await _editController.reorderItems(
         tripId: widget.tripId,
         dayNumber: day,
         itemIds: updatedOrder.map((doc) => doc.id).toList(),
       );
 
-      // Exit reorder mode after successful reorder
       setState(() {
         _isProcessing = false;
         _reorderingDay = null;
@@ -770,7 +854,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
     }
   }
 
-  /// Build the trip style header showing selected destination types
   Widget _buildTripStyleHeader(BuildContext context, List<String> destinationTypes, Map<String, dynamic> tripData) {
     if (destinationTypes.isEmpty) {
       return const SizedBox.shrink();
@@ -908,7 +991,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
         };
   }
 
-  /// Build the skipped activities section with restore option
   Widget _buildSkippedSection(BuildContext context, List<DocumentSnapshot> skippedItems, String tripId) {
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 16),
@@ -1023,86 +1105,108 @@ class _ItineraryTabState extends State<ItineraryTab> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFF2196F3), Color(0xFF1976D2)]),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text('Day $day',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (dateString.isNotEmpty)
-                  Text(dateString,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87)),
-                Text('$itemCount activities', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-              ],
-            ),
-          ),
-
-          // Reorder button
-          if (!isReordering)
-            ElevatedButton.icon(
-              onPressed: () => setState(() => _reorderingDay = day),
-              icon: const Icon(Icons.swap_vert, size: 16),
-              label: const Text('Reorder'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple[50],
-                foregroundColor: Colors.purple[700],
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(color: Colors.purple[200]!),
-                ),
-              ),
-            ),
-
-          const SizedBox(width: 8),
-
-          // Weather widget
-          if (weather != null)
-            GestureDetector(
-              onTap: () => _showWeatherDetails(context, weather),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: _getWeatherBackgroundColor(weather),
-                  borderRadius: BorderRadius.circular(12),
+                  gradient: const LinearGradient(colors: [Color(0xFF2196F3), Color(0xFF1976D2)]),
+                  borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 4,
+                      color: Colors.blue.withOpacity(0.3),
+                      blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                child: Row(children: [
-                  Icon(IconHelper.getWeatherIcon(weather['description'] ?? ''), size: 18, color: Colors.white),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${weather['temp']?.toStringAsFixed(0) ?? '--'}°C',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  if (weather['rain_probability'] != null && weather['rain_probability'] > 30) ...[
-                    const SizedBox(width: 4),
-                    Icon(Icons.water_drop, size: 12, color: Colors.white.withOpacity(0.8)),
-                    Text(
-                      '${weather['rain_probability']}%',
-                      style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 11),
-                    ),
-                  ],
-                ]),
+                child: Text(
+                  'Day $day',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (dateString.isNotEmpty)
+                      Text(
+                        dateString,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                    Text('$itemCount activities', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Action buttons row - separate from header to prevent overflow
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.start,
+            children: [
+              if (!isReordering)
+                ElevatedButton.icon(
+                  onPressed: () => setState(() => _reorderingDay = day),
+                  icon: const Icon(Icons.swap_vert, size: 16),
+                  label: const Text('Reorder'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple[50],
+                    foregroundColor: Colors.purple[700],
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      side: BorderSide(color: Colors.purple[200]!),
+                    ),
+                  ),
+                ),
+              if (weather != null)
+                GestureDetector(
+                  onTap: () => _showWeatherDetails(context, weather),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getWeatherBackgroundColor(weather),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(IconHelper.getWeatherIcon(weather['description'] ?? ''), size: 18, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${weather['temp']?.toStringAsFixed(0) ?? '--'}°C',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        if (weather['rain_probability'] != null && weather['rain_probability'] > 30) ...[
+                          const SizedBox(width: 4),
+                          Icon(Icons.water_drop, size: 12, color: Colors.white.withOpacity(0.8)),
+                          Text(
+                            '${weather['rain_probability']}%',
+                            style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 11),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -1133,17 +1237,23 @@ class _ItineraryTabState extends State<ItineraryTab> {
         subtitle: Text(accData['address'] ?? 'Your Accommodation',
             style: TextStyle(color: Colors.grey[600], fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
         dense: true,
-        onTap: () {
-          if (accData['maps_link'] != null) {
-            launchUrl(Uri.parse(accData['maps_link']), mode: LaunchMode.externalApplication);
-          } else if (accData['coordinates'] != null) {
-            final coords = accData['coordinates'];
-            final url = 'https://www.google.com/maps?q=${coords['lat']},${coords['lng']}';
-            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-          }
-        },
+        onTap: () => _showExternalLinkDialog(
+          accData['name'] ?? 'Hotel',
+          _getAccommodationMapsUrl(accData),
+        ),
       ),
     );
+  }
+
+  /// Get maps URL for accommodation
+  String _getAccommodationMapsUrl(Map<String, dynamic> accData) {
+    if (accData['maps_link'] != null && accData['maps_link'].toString().isNotEmpty) {
+      return accData['maps_link'];
+    } else if (accData['coordinates'] != null) {
+      final coords = accData['coordinates'];
+      return 'https://www.google.com/maps?q=${coords['lat']},${coords['lng']}';
+    }
+    return '';
   }
 
   Widget _buildItineraryCard(
@@ -1153,10 +1263,8 @@ class _ItineraryTabState extends State<ItineraryTab> {
     final categoryColor = IconHelper.getCategoryColor(category);
     final hasRestaurantOptions = data['restaurantOptions'] != null && (data['restaurantOptions'] as List).isNotEmpty;
 
-    // Check if this destination matches user's preferred categories
     final isPreferred = data['is_preferred'] == true || data['isPreferred'] == true;
 
-    // Check edit status flags
     final isReplaced = data['isReplaced'] == true;
     final isExtended = data['isExtended'] == true;
     final isShortened = data['isShortened'] == true;
@@ -1227,7 +1335,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            // Status badges
                             if (isReordered)
                               _buildStatusBadge('Reordered', Icons.swap_vert, Colors.purple)
                             else if (isReplaced)
@@ -1237,33 +1344,40 @@ class _ItineraryTabState extends State<ItineraryTab> {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        Row(children: [
-                          Icon(Icons.access_time, size: 12, color: Colors.grey[600]),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${data['startTime']} - ${data['endTime']}${isExtended ? ' (extended)' : isShortened ? ' (shortened)' : ''}',
-                            style: TextStyle(
-                              color: isExtended
-                                  ? Colors.green[700]
-                                  : isShortened
-                                  ? Colors.orange[700]
-                                  : Colors.grey[700],
-                              fontSize: 13,
-                              fontWeight: (isExtended || isShortened) ? FontWeight.w500 : FontWeight.normal,
+                        // FIXED: Use Wrap instead of Row for time and local name
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.access_time, size: 12, color: Colors.grey[600]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${data['startTime']} - ${data['endTime']}${isExtended ? ' (extended)' : isShortened ? ' (shortened)' : ''}',
+                                  style: TextStyle(
+                                    color: isExtended
+                                        ? Colors.green[700]
+                                        : isShortened
+                                        ? Colors.orange[700]
+                                        : Colors.grey[700],
+                                    fontSize: 13,
+                                    fontWeight: (isExtended || isShortened) ? FontWeight.w500 : FontWeight.normal,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          if (data['name_local'] != null && data['name_local'] != data['title']) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
+                            if (data['name_local'] != null && data['name_local'] != data['title'])
+                              Text(
                                 '(${data['name_local']})',
                                 style: TextStyle(color: Colors.grey[500], fontSize: 11, fontStyle: FontStyle.italic),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                            ),
                           ],
-                        ]),
+                        ),
                       ],
                     ),
                   ),
@@ -1275,7 +1389,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
                 ],
               ),
 
-              // Travel info
               if (data['estimatedTravelMinutes'] != null || data['distanceKm'] != null) ...[
                 const SizedBox(height: 8),
                 Container(
@@ -1305,7 +1418,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
                 ),
               ],
 
-              // User note display
               if (userNote != null && userNote.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(
@@ -1375,6 +1487,90 @@ class _ItineraryTabState extends State<ItineraryTab> {
         ],
       ),
     );
+  }
+
+  // ========================================
+  // EXTERNAL LINK DIALOG
+  // ========================================
+
+  /// Show confirmation dialog before opening external link
+  Future<void> _showExternalLinkDialog(String siteName, String url) async {
+    if (url.isEmpty) return;
+
+    final result = await SweetAlertDialog.show(
+      context: context,
+      type: SweetAlertType.info,
+      title: 'Leaving Wandry',
+      subtitle: 'You are about to visit $siteName. This will open in your browser.',
+      content: Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.link, color: Colors.grey[600], size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _getShortenedUrl(url),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  fontFamily: 'monospace',
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+      confirmText: 'Open',
+      cancelText: 'Cancel',
+      showCancelButton: true,
+    );
+
+    if (result == true) {
+      _launchUrl(url);
+    }
+  }
+
+  /// Get shortened URL for display
+  String _getShortenedUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return uri.host + (uri.path.length > 20 ? '${uri.path.substring(0, 20)}...' : uri.path);
+    } catch (e) {
+      return url.length > 40 ? '${url.substring(0, 40)}...' : url;
+    }
+  }
+
+  /// Launch URL with error handling
+  Future<void> _launchUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          SweetAlertDialog.error(
+            context: context,
+            title: 'Cannot Open Link',
+            subtitle: 'Unable to open the link. Please try again later.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Error',
+          subtitle: 'An error occurred: $e',
+        );
+      }
+    }
   }
 
   // ========================================
@@ -1619,8 +1815,11 @@ class _ItineraryTabState extends State<ItineraryTab> {
             ),
           ],
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+          // FIXED: Use Wrap for weather stats to prevent overflow
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceAround,
             children: [
               _buildWeatherStat(
                 Icons.water_drop,
@@ -1772,14 +1971,27 @@ class _ItineraryTabState extends State<ItineraryTab> {
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              Row(
+                              // FIXED: Use Wrap for cost and distance
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 4,
                                 children: [
-                                  Icon(Icons.attach_money, size: 14, color: Colors.green[700]),
-                                  Text(costDisplay,
-                                      style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.w500)),
-                                  const SizedBox(width: 12),
-                                  Icon(Icons.directions_walk, size: 14, color: Colors.blue[600]),
-                                  Text(' ${r['distance_km'] ?? '?'} km', style: TextStyle(color: Colors.blue[700])),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.attach_money, size: 14, color: Colors.green[700]),
+                                      Text(costDisplay,
+                                          style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.w500)),
+                                    ],
+                                  ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.directions_walk, size: 14, color: Colors.blue[600]),
+                                      Text(' ${r['distance_km'] ?? '?'} km',
+                                          style: TextStyle(color: Colors.blue[700])),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ],
@@ -1802,24 +2014,28 @@ class _ItineraryTabState extends State<ItineraryTab> {
   }
 
   void _openRestaurantOnMap(BuildContext context, Map<String, dynamic> restaurant) async {
+    String url = '';
+    String name = restaurant['name'] ?? 'Restaurant';
+
     final mapsLink = restaurant['maps_link'];
     if (mapsLink != null && mapsLink.toString().isNotEmpty) {
-      try {
-        final uri = Uri.parse(mapsLink);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-          return;
-        }
-      } catch (e) {
-        // Continue to fallback
+      url = mapsLink;
+    } else {
+      final coords = restaurant['coordinates'] as Map<String, dynamic>?;
+      if (coords != null && coords['lat'] != null && coords['lng'] != null) {
+        url = 'https://www.google.com/maps?q=${coords['lat']},${coords['lng']}';
       }
     }
 
-    final coords = restaurant['coordinates'] as Map<String, dynamic>?;
-    if (coords != null && coords['lat'] != null && coords['lng'] != null) {
-      final uri = Uri.parse('https://www.google.com/maps?q=${coords['lat']},${coords['lng']}');
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (url.isNotEmpty) {
+      await _showExternalLinkDialog(name, url);
+    } else {
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Cannot Open Maps',
+          subtitle: 'No location information available for this restaurant.',
+        );
       }
     }
   }
@@ -1829,41 +2045,29 @@ class _ItineraryTabState extends State<ItineraryTab> {
   // ========================================
 
   void _openDestinationOnMap(BuildContext context, Map<String, dynamic> item) async {
+    String url = '';
+    String name = item['title'] ?? 'Destination';
+
     final mapsLink = item['maps_link'];
     if (mapsLink != null && mapsLink.toString().isNotEmpty) {
-      try {
-        final uri = Uri.parse(mapsLink);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-          return;
-        }
-      } catch (e) {
-        // Continue to fallback
+      url = mapsLink;
+    } else {
+      final coords = item['coordinates'] as Map<String, dynamic>?;
+      if (coords != null && coords['lat'] != null && coords['lng'] != null) {
+        url = 'https://www.google.com/maps?q=${coords['lat']},${coords['lng']}';
       }
     }
 
-    final coords = item['coordinates'] as Map<String, dynamic>?;
-    if (coords != null && coords['lat'] != null && coords['lng'] != null) {
-      final lat = coords['lat'];
-      final lng = coords['lng'];
-      final uri = Uri.parse('https://www.google.com/maps?q=$lat,$lng');
-
-      try {
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-          return;
-        }
-      } catch (e) {
-        // Show error
+    if (url.isNotEmpty) {
+      await _showExternalLinkDialog(name, url);
+    } else {
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Cannot Open Maps',
+          subtitle: 'Could not open maps for ${item['title'] ?? 'destination'}',
+        );
       }
-    }
-
-    if (context.mounted) {
-      SweetAlertDialog.error(
-        context: context,
-        title: 'Cannot Open Maps',
-        subtitle: 'Could not open maps for ${item['title'] ?? 'destination'}',
-      );
     }
   }
 
@@ -1980,27 +2184,35 @@ class _ItineraryTabState extends State<ItineraryTab> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Row(
+                  // FIXED: Use Wrap for rating and time
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 8,
                     children: [
-                      if (item['rating'] != null) ...[
-                        const Icon(Icons.star, color: Colors.amber, size: 18),
-                        const SizedBox(width: 4),
-                        Text(
-                          (item['rating'] is num)
-                              ? (item['rating'] as num).toStringAsFixed(1)
-                              : item['rating'].toString(),
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                      if (item['rating'] != null)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star, color: Colors.amber, size: 18),
+                            const SizedBox(width: 4),
+                            Text(
+                              (item['rating'] is num)
+                                  ? (item['rating'] as num).toStringAsFixed(1)
+                                  : item['rating'].toString(),
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 16),
-                      ],
-                      Icon(Icons.access_time, size: 18, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          '${item['startTime']} - ${item['endTime']}',
-                          style: TextStyle(color: Colors.grey[700], fontSize: 14),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.access_time, size: 18, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${item['startTime']} - ${item['endTime']}',
+                            style: TextStyle(color: Colors.grey[700], fontSize: 14),
+                          ),
+                        ],
                       ),
                     ],
                   ),

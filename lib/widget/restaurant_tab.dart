@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utilities/currency_helper.dart';
+import 'sweet_alert_dialog.dart';
 
 class RestaurantTab extends StatefulWidget {
   final String tripId;
@@ -367,16 +368,119 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
             ]),
             trailing: IconButton(
               icon: const Icon(Icons.map, color: Colors.blue),
-              onPressed: () async {
-                if (coordinates != null) {
-                  final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${coordinates['lat']},${coordinates['lng']}');
-                  if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
-              },
+              onPressed: () => _openRestaurantOnMap(context, restaurant),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Show confirmation dialog before opening external link
+  Future<void> _showExternalLinkDialog(String siteName, String url) async {
+    if (url.isEmpty) return;
+
+    final result = await SweetAlertDialog.show(
+      context: context,
+      type: SweetAlertType.info,
+      title: 'Leaving Wandry',
+      subtitle: 'You are about to visit $siteName on Google Maps. This will open in your browser.',
+      content: Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.map, color: Colors.blue[600], size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _getShortenedUrl(url),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  fontFamily: 'monospace',
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+      confirmText: 'Open',
+      cancelText: 'Cancel',
+      showCancelButton: true,
+    );
+
+    if (result == true) {
+      _launchUrl(url);
+    }
+  }
+
+  /// Get shortened URL for display
+  String _getShortenedUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return uri.host + (uri.path.length > 20 ? '${uri.path.substring(0, 20)}...' : uri.path);
+    } catch (e) {
+      return url.length > 40 ? '${url.substring(0, 40)}...' : url;
+    }
+  }
+
+  /// Launch URL with error handling
+  Future<void> _launchUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          SweetAlertDialog.error(
+            context: context,
+            title: 'Cannot Open Link',
+            subtitle: 'Unable to open the link. Please try again later.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Error',
+          subtitle: 'An error occurred: $e',
+        );
+      }
+    }
+  }
+
+  /// Open restaurant on map with confirmation dialog
+  Future<void> _openRestaurantOnMap(BuildContext context, Map<String, dynamic> restaurant) async {
+    final restaurantName = restaurant['name'] ?? 'Restaurant';
+    final coordinates = restaurant['coordinates'] as Map<String, dynamic>?;
+    final mapsLink = restaurant['maps_link'];
+
+    String url = '';
+
+    // Try maps_link first
+    if (mapsLink != null && mapsLink.toString().isNotEmpty) {
+      url = mapsLink;
+    } else if (coordinates != null && coordinates['lat'] != null && coordinates['lng'] != null) {
+      url = 'https://www.google.com/maps/search/?api=1&query=${coordinates['lat']},${coordinates['lng']}';
+    }
+
+    if (url.isNotEmpty) {
+      await _showExternalLinkDialog(restaurantName, url);
+    } else {
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Cannot Open Maps',
+          subtitle: 'No location information available for this restaurant.',
+        );
+      }
+    }
   }
 }

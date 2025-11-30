@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../controller/location_controller.dart';
 import '../widget/permission_dialog.dart';
+import '../widget/sweet_alert_dialog.dart';
 import 'nearby_attractions_page.dart';
 
 class ExplorePage extends StatefulWidget {
@@ -113,18 +114,10 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
           await _getCurrentLocation();
 
           if (mounted && _currentPosition != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.white),
-                    SizedBox(width: 12),
-                    Text('Location accessed successfully!'),
-                  ],
-                ),
-                duration: Duration(seconds: 2),
-                backgroundColor: Colors.green,
-              ),
+            SweetAlertDialog.success(
+              context: context,
+              title: 'Location Enabled',
+              subtitle: 'Location accessed successfully!',
             );
           }
         }
@@ -136,18 +129,10 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
           await _getCurrentLocation();
 
           if (mounted && _currentPosition != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.white),
-                    SizedBox(width: 12),
-                    Text('Location accessed successfully!'),
-                  ],
-                ),
-                duration: Duration(seconds: 2),
-                backgroundColor: Colors.green,
-              ),
+            SweetAlertDialog.success(
+              context: context,
+              title: 'Location Enabled',
+              subtitle: 'Location accessed successfully!',
             );
           }
         }
@@ -204,27 +189,13 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
             Navigator.of(context).pop();
             _startPermissionChecking();
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Row(
-                  children: [
-                    SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text('Waiting for you to enable location...'),
-                    ),
-                  ],
-                ),
-                duration: Duration(seconds: 5),
-                backgroundColor: Color(0xFF4A90E2),
-              ),
+            // Show info dialog instead of SnackBar
+            SweetAlertDialog.show(
+              context: context,
+              type: SweetAlertType.info,
+              title: 'Enable Location',
+              subtitle: 'Waiting for you to enable location permission in settings...',
+              confirmText: 'OK',
             );
 
             await LocationController.openAppSettings();
@@ -236,11 +207,10 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
 
   void _navigateToNearbyAttractions() {
     if (_currentPosition == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enable location first'),
-          duration: Duration(seconds: 2),
-        ),
+      SweetAlertDialog.warning(
+        context: context,
+        title: 'Location Required',
+        subtitle: 'Please enable location first to find nearby attractions.',
       );
       return;
     }
@@ -626,28 +596,16 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
                               child: ElevatedButton.icon(
                                 onPressed: () async {
                                   _startPermissionChecking();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Row(
-                                        children: [
-                                          SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                            ),
-                                          ),
-                                          SizedBox(width: 12),
-                                          Expanded(
-                                            child: Text('Waiting for you to enable location...'),
-                                          ),
-                                        ],
-                                      ),
-                                      duration: Duration(seconds: 5),
-                                      backgroundColor: Color(0xFF4A90E2),
-                                    ),
+
+                                  // Show info dialog instead of SnackBar
+                                  SweetAlertDialog.show(
+                                    context: context,
+                                    type: SweetAlertType.info,
+                                    title: 'Enable Location',
+                                    subtitle: 'Waiting for you to enable location permission in settings...',
+                                    confirmText: 'OK',
                                   );
+
                                   await LocationController.openAppSettings();
                                 },
                                 style: ElevatedButton.styleFrom(

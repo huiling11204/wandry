@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:wandry/controller/profile_controller.dart';
 import 'package:wandry/utilities/validators.dart';
 import 'package:wandry/widget/profile_field_widget.dart';
+import 'package:wandry/widget/sweet_alert_dialog.dart';
 
 class EditProfilePage extends StatefulWidget {
   final Map<String, dynamic> profileData;
@@ -76,31 +77,26 @@ class _EditProfilePageState extends State<EditProfilePage> {
       if (mounted) {
         // Show appropriate message based on email update status
         if (result['emailMessage'] == 'verification_sent') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Verification email sent to ${result['newEmail']}. Please verify to complete the change.',
-              ),
-              duration: Duration(seconds: 5),
-              backgroundColor: Colors.orange,
-            ),
+          await SweetAlertDialog.show(
+            context: context,
+            type: SweetAlertType.warning,
+            title: 'Verification Required',
+            subtitle: 'Verification email sent to ${result['newEmail']}. Please verify to complete the email change.',
+            confirmText: 'OK',
           );
         } else if (result['emailMessage'] == 'requires_reauth') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Email change requires re-login. Profile updated, but please sign in again to change email.',
-              ),
-              duration: Duration(seconds: 5),
-              backgroundColor: Colors.orange,
-            ),
+          await SweetAlertDialog.show(
+            context: context,
+            type: SweetAlertType.warning,
+            title: 'Re-login Required',
+            subtitle: 'Email change requires re-login. Profile updated, but please sign in again to change email.',
+            confirmText: 'OK',
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Profile updated successfully'),
-              backgroundColor: Colors.green,
-            ),
+          await SweetAlertDialog.success(
+            context: context,
+            title: 'Success!',
+            subtitle: 'Profile updated successfully.',
           );
         }
 
@@ -109,11 +105,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
     } catch (e) {
       print('❌ Error updating profile: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error updating profile: $e'),
-            backgroundColor: Colors.red,
-          ),
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Update Failed',
+          subtitle: 'Error updating profile: $e',
         );
       }
     }

@@ -1,6 +1,8 @@
 // lib/pages/trip_detail_page.dart
-// COMPLETE MERGED VERSION: Original trip_detail_page.dart + Edit functionality
-// This combines ALL your existing code with the new edit features
+// UPDATED: Replaced Resources tab with Trip Essentials, replaced ML Insights with Explore & Insights
+// Trip Essentials and Explore tabs are customized based on destination
+// UPDATED: Changed all SnackBars and AlertDialogs to SweetAlert dialogs
+// UPDATED: Changed 3-dot popup menu to SweetAlert-style bottom sheet
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,12 +12,13 @@ import 'package:wandry/widget/accommodation_tab.dart';
 import 'package:wandry/widget/budget_tab.dart';
 import 'package:wandry/widget/itinerary_tab.dart';
 import 'package:wandry/widget/restaurant_tab.dart';
-import 'package:wandry/widget/resources_tab.dart';
-import 'package:wandry/widget/ml_insight_tab.dart';
+import 'package:wandry/widget/trip_essentials_tab.dart';  // NEW
+import 'package:wandry/widget/insights_analytics_tab.dart'; // NEW
+import 'package:wandry/widget/sweet_alert_dialog.dart';
 import 'package:wandry/utilities/currency_helper.dart';
 import 'package:wandry/controller/export_controller.dart';
 import 'package:wandry/widget/export_share_ui.dart';
-import 'edit_trip_preferences_page.dart'; // NEW: Import for edit functionality
+import 'edit_trip_preferences_page.dart';
 
 class TripDetailPage extends StatefulWidget {
   final String tripId;
@@ -45,25 +48,12 @@ class _TripDetailPageState extends State<TripDetailPage>
   }
 
   Future<void> _deleteTrip() async {
-    final confirm = await showDialog<bool>(
+    final confirm = await SweetAlertDialog.confirm(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Trip'),
-        content: const Text(
-          'Are you sure you want to delete this trip? This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      title: 'Delete Trip',
+      subtitle: 'Are you sure you want to delete this trip? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
     );
 
     if (confirm == true) {
@@ -71,24 +61,13 @@ class _TripDetailPageState extends State<TripDetailPage>
         if (!mounted) return;
         Navigator.of(context).popUntil((route) => route.isFirst);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                ),
-                SizedBox(width: 16),
-                Text('Deleting trip...'),
-              ],
-            ),
-            duration: Duration(seconds: 2),
-          ),
+        // Show info dialog for deleting progress
+        SweetAlertDialog.show(
+          context: context,
+          type: SweetAlertType.info,
+          title: 'Deleting Trip',
+          subtitle: 'Please wait while we delete your trip...',
+          confirmText: 'OK',
         );
 
         // Delete trip document
@@ -125,27 +104,28 @@ class _TripDetailPageState extends State<TripDetailPage>
         await batch.commit();
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Trip deleted successfully'),
-              backgroundColor: Colors.green,
-            ),
+          // Dismiss any existing dialog first
+          Navigator.of(context).popUntil((route) => route.isFirst);
+
+          SweetAlertDialog.success(
+            context: context,
+            title: 'Deleted!',
+            subtitle: 'Trip deleted successfully.',
           );
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to delete trip: $e'),
-              backgroundColor: Colors.red,
-            ),
+          SweetAlertDialog.error(
+            context: context,
+            title: 'Delete Failed',
+            subtitle: 'Failed to delete trip: $e',
           );
         }
       }
     }
   }
 
-  // NEW: Open edit preferences page
+  // Open edit preferences page
   void _openEditPage(Map<String, dynamic> tripData) async {
     final result = await Navigator.push(
       context,
@@ -159,13 +139,275 @@ class _TripDetailPageState extends State<TripDetailPage>
 
     // If changes were made, show a success message
     if (result == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Trip updated successfully!'),
-          backgroundColor: Colors.green,
-        ),
+      SweetAlertDialog.success(
+        context: context,
+        title: 'Updated!',
+        subtitle: 'Trip updated successfully!',
       );
     }
+  }
+
+  // NEW: Show sweet alert style options bottom sheet
+  void _showOptionsBottomSheet(Map<String, dynamic> tripData) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Container();
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final slideAnimation = Tween<Offset>(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        ));
+
+        return SlideTransition(
+          position: slideAnimation,
+          child: FadeTransition(
+            opacity: animation,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: _buildOptionsSheet(tripData),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOptionsSheet(Map<String, dynamic> tripData) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      constraints: const BoxConstraints(maxWidth: 500),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Title with icon
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.settings,
+                        color: Colors.blue[600],
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Trip Options',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'What would you like to do?',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Option buttons
+                _buildOptionTile(
+                  icon: Icons.edit_outlined,
+                  iconColor: Colors.blue[600]!,
+                  bgColor: Colors.blue[50]!,
+                  title: 'Edit Trip Preferences',
+                  subtitle: 'Modify dates, destination & settings',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openEditPage(tripData);
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                _buildOptionTile(
+                  icon: Icons.ios_share_outlined,
+                  iconColor: Colors.green[600]!,
+                  bgColor: Colors.green[50]!,
+                  title: 'Export & Share',
+                  subtitle: 'Download or share your trip plan',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ExportShareBottomSheet.show(context, widget.tripId);
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                _buildOptionTile(
+                  icon: Icons.delete_outline,
+                  iconColor: Colors.red[600]!,
+                  bgColor: Colors.red[50]!,
+                  title: 'Delete Trip',
+                  subtitle: 'Permanently remove this trip',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _deleteTrip();
+                  },
+                  isDanger: true,
+                ),
+
+                const SizedBox(height: 20),
+
+                // Cancel button
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey[700],
+                      side: BorderSide(color: Colors.grey[300]!),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionTile({
+    required IconData icon,
+    required Color iconColor,
+    required Color bgColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isDanger ? Colors.red[50]!.withOpacity(0.5) : Colors.grey[50],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDanger ? Colors.red[100]! : Colors.grey[200]!,
+            ),
+          ),
+          child: Row(
+            children: [
+              // Icon container
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: iconColor.withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // Text content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: isDanger ? Colors.red[700] : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Arrow
+              Icon(
+                Icons.chevron_right,
+                color: isDanger ? Colors.red[300] : Colors.grey[400],
+                size: 24,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -183,7 +425,7 @@ class _TripDetailPageState extends State<TripDetailPage>
             return const Center(child: Text('Trip not found'));
           }
 
-          // NEW: Get raw tripData for edit functionality
+          // Get raw tripData for edit functionality
           final tripData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
           final trip = TripModel.fromFirestore(snapshot.data!);
 
@@ -204,8 +446,21 @@ class _TripDetailPageState extends State<TripDetailPage>
                       RestaurantTab(tripId: widget.tripId),
                       BudgetTab(tripId: widget.tripId),
                       AccommodationTab(tripId: widget.tripId),
-                      const ResourcesTab(),
-                      MLInsightsTab(mlMetrics: trip.mlMetrics),
+                      // NEW: Trip Essentials (replaces Resources)
+                      TripEssentialsTab(
+                        tripId: widget.tripId,
+                        destinationCity: trip.destinationCity,
+                        destinationCountry: trip.destinationCountry,
+                        destinationCurrency: trip.destinationCurrency,
+                      ),
+                      // NEW: Explore & Insights (replaces ML Insights, but includes ML at bottom)
+                      InsightsAnalyticsTab(
+                        tripId: widget.tripId,
+                        destinationCity: trip.destinationCity,
+                        destinationCountry: trip.destinationCountry,
+                        startDate: trip.startDate,
+                        endDate: trip.endDate,
+                      ),
                     ],
                   ),
                 ),
@@ -255,7 +510,7 @@ class _TripDetailPageState extends State<TripDetailPage>
         ),
       ),
       actions: [
-        // NEW: Edit button - prominent in app bar
+        // Edit button - prominent in app bar
         IconButton(
           icon: const Icon(Icons.edit),
           tooltip: 'Edit Trip',
@@ -272,46 +527,11 @@ class _TripDetailPageState extends State<TripDetailPage>
           },
         ),
 
-        // POPUP MENU
-        PopupMenuButton(
-          itemBuilder: (context) => [
-            // NEW: Edit option in menu
-            const PopupMenuItem(
-              value: 'edit',
-              child: ListTile(
-                leading: Icon(Icons.edit),
-                title: Text('Edit Trip Preferences'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'export',
-              child: ListTile(
-                leading: Icon(Icons.file_download),
-                title: Text('Export & Share'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: ListTile(
-                leading: Icon(Icons.delete, color: Colors.red),
-                title: Text('Delete', style: TextStyle(color: Colors.red)),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ],
-          onSelected: (value) {
-            if (value == 'delete') {
-              _deleteTrip();
-            } else if (value == 'export') {
-              // Show beautiful bottom sheet
-              ExportShareBottomSheet.show(context, widget.tripId);
-            } else if (value == 'edit') {
-              // NEW: Handle edit from menu
-              _openEditPage(tripData);
-            }
-          },
+        // MORE OPTIONS BUTTON - Sweet Alert Style Bottom Sheet
+        IconButton(
+          icon: const Icon(Icons.more_vert),
+          tooltip: 'More Options',
+          onPressed: () => _showOptionsBottomSheet(tripData),
         ),
       ],
       bottom: PreferredSize(
@@ -338,8 +558,10 @@ class _TripDetailPageState extends State<TripDetailPage>
                 text: 'Budget',
               ),
               Tab(icon: Icon(Icons.hotel, size: 20), text: 'Accommodation'),
-              Tab(icon: Icon(Icons.map, size: 20), text: 'Resources'),
-              Tab(icon: Icon(Icons.psychology, size: 20), text: 'ML Insights'),
+              // UPDATED: Changed from Resources to Essentials
+              Tab(icon: Icon(Icons.emergency, size: 20), text: 'Essentials'),
+              // UPDATED: Changed from ML Insights to Explore
+              Tab(icon: Icon(Icons.insights, size: 20), text: 'Insights'),
             ],
           ),
         ),
@@ -347,7 +569,7 @@ class _TripDetailPageState extends State<TripDetailPage>
     );
   }
 
-  // UPDATED: Added tripData parameter and edit button
+  // Updated: Added tripData parameter and edit button
   Widget _buildTripInfoCard(TripModel trip, Map<String, dynamic> tripData) {
     return Container(
       margin: const EdgeInsets.all(16),
@@ -386,7 +608,7 @@ class _TripDetailPageState extends State<TripDetailPage>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // NEW: Quick edit button
+              // Quick edit button
               TextButton.icon(
                 onPressed: () => _openEditPage(tripData),
                 icon: const Icon(Icons.edit, size: 16),
@@ -428,7 +650,7 @@ class _TripDetailPageState extends State<TripDetailPage>
             ],
           ),
 
-          // NEW: Data quality indicator
+          // Data quality indicator
           if (trip.hasLimitedData) ...[
             const SizedBox(height: 12),
             Container(
@@ -528,7 +750,7 @@ class _TripDetailPageState extends State<TripDetailPage>
             ),
           ],
 
-          // NEW: Display trip styles/destination types
+          // Display trip styles/destination types
           if (trip.destinationTypes != null && trip.destinationTypes!.isNotEmpty) ...[
             const SizedBox(height: 12),
             Wrap(
@@ -586,7 +808,7 @@ class _TripDetailPageState extends State<TripDetailPage>
     );
   }
 
-  // NEW: Helper to get type display with emoji
+  // Helper to get type display with emoji
   String _getTypeDisplay(String type) {
     const typeDisplay = {
       'relaxing': '🏖️ Relaxing',

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:wandry/controller/feedback_controller.dart';
 import 'package:wandry/model/feedback_model.dart';
 import 'package:wandry/widget/star_rating_widget.dart';
+import 'package:wandry/widget/sweet_alert_dialog.dart';
 import 'submit_feedback_page.dart';
 import 'edit_feedback_page.dart';
 
@@ -354,11 +355,10 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
   void _navigateToEditFeedback(FeedbackModel feedback) {
     if (!feedback.canEdit()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Edit period has expired. You can only edit feedback within 5 days.'),
-          backgroundColor: Colors.orange[700],
-        ),
+      SweetAlertDialog.warning(
+        context: context,
+        title: 'Edit Period Expired',
+        subtitle: 'You can only edit feedback within 5 days of submission.',
       );
       return;
     }
@@ -372,56 +372,31 @@ class _FeedbackPageState extends State<FeedbackPage> {
   }
 
   Future<void> _confirmDelete(FeedbackModel feedback) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await SweetAlertDialog.confirm(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(Icons.warning_rounded, color: Colors.orange[700], size: 28),
-            SizedBox(width: 12),
-            Text('Delete Feedback'),
-          ],
-        ),
-        content: Text('Are you sure you want to delete this feedback? This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[700])),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red[600],
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: Text('Delete'),
-          ),
-        ],
-      ),
+      title: 'Delete Feedback',
+      subtitle: 'Are you sure you want to delete this feedback? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
     );
 
     if (confirm == true && feedback.id != null) {
       final result = await _controller.deleteFeedback(feedback.id!);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(
-                  result['success'] ? Icons.check_circle : Icons.error,
-                  color: Colors.white,
-                ),
-                SizedBox(width: 12),
-                Expanded(child: Text(result['message'])),
-              ],
-            ),
-            backgroundColor: result['success'] ? Colors.green[600] : Colors.red[600],
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
+        if (result['success']) {
+          SweetAlertDialog.success(
+            context: context,
+            title: 'Deleted!',
+            subtitle: result['message'],
+          );
+        } else {
+          SweetAlertDialog.error(
+            context: context,
+            title: 'Delete Failed',
+            subtitle: result['message'],
+          );
+        }
       }
     }
   }

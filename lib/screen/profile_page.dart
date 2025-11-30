@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/profile_controller.dart';
 import 'package:wandry/widget/profile_field_widget.dart';
+import 'package:wandry/widget/sweet_alert_dialog.dart';
 import 'edit_profile_page.dart';
 
 class ViewProfilePage extends StatefulWidget {
@@ -39,9 +40,13 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
       });
     } catch (e) {
       print('❌ Error loading profile: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading profile: $e')),
-      );
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Load Failed',
+          subtitle: 'Error loading profile: $e',
+        );
+      }
 
       // Set fallback data
       setState(() {
@@ -62,25 +67,14 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
   // DELETE ACCOUNT (Calls Controller)
   // ---------------------------------------------------
   Future<void> _deleteAccount() async {
-    final confirm = await showDialog<bool>(
+    final confirm = await SweetAlertDialog.show(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete Account'),
-        content: Text(
-          'Are you sure you want to delete your account? '
-              'This action cannot be undone and all your data will be permanently deleted.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+      type: SweetAlertType.warning,
+      title: 'Delete Account',
+      subtitle: 'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      showCancelButton: true,
     );
 
     if (confirm != true) return;
@@ -88,18 +82,26 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
     try {
       await _profileController.deleteAccount();
 
-      // Navigate to login
+      // Show success message
       if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Account deleted successfully')),
+        await SweetAlertDialog.success(
+          context: context,
+          title: 'Account Deleted',
+          subtitle: 'Your account has been deleted successfully.',
         );
+
+        // Navigate to login
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
       }
     } catch (e) {
       print('❌ Error deleting account: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error deleting account: $e')),
-      );
+      if (mounted) {
+        SweetAlertDialog.error(
+          context: context,
+          title: 'Delete Failed',
+          subtitle: 'Error deleting account: $e',
+        );
+      }
     }
   }
 

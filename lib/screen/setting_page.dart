@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'profile_page.dart';
 import 'package:wandry/screen/feedback/feedback_page.dart';
+import 'package:wandry/widget/sweet_alert_dialog.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -45,26 +46,27 @@ class SettingsPage extends StatelessWidget {
             title: 'Log Out',
             showArrow: false,
             onTap: () async {
-              final confirm = await showDialog<bool>(
+              final confirm = await SweetAlertDialog.confirm(
                 context: context,
-                builder: (context) => AlertDialog(
-                  title: Text('Log Out'),
-                  content: Text('Are you sure you want to log out?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text('Log Out', style: TextStyle(color: Colors.red)),
-                    ),
-                  ],
-                ),
+                title: 'Log Out',
+                subtitle: 'Are you sure you want to log out?',
+                confirmText: 'Log Out',
+                cancelText: 'Cancel',
               );
 
               if (confirm == true) {
                 await FirebaseAuth.instance.signOut();
+
+                // Show success message briefly before navigating
+                SweetAlertDialog.success(
+                  context: context,
+                  title: 'Logged Out',
+                  subtitle: 'You have been logged out successfully.',
+                );
+
+                // Small delay to show the success message
+                await Future.delayed(const Duration(milliseconds: 500));
+
                 Navigator.pushNamedAndRemoveUntil(
                   context,
                   '/login',
