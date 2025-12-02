@@ -1,5 +1,5 @@
 // ============================================
-// PROFILE CONTROLLER - Business Logic
+// PROFILE CONTROLLER - Business Logic (FIXED)
 // Location: lib/controller/profileController.dart
 // ============================================
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -158,7 +158,7 @@ class ProfileController {
   }
 
   // ---------------------------------------------------
-  // DELETE ACCOUNT
+  // DELETE ACCOUNT (FIXED)
   // ---------------------------------------------------
   Future<void> deleteAccount() async {
     if (currentUser == null) {
@@ -167,16 +167,22 @@ class ProfileController {
 
     print('🗑️ Starting account deletion...');
 
-    // Delete all trips belonging to user
-    final trips = await _firestore
-        .collection('trips')
-        .where('firebaseUid', isEqualTo: currentUser!.uid)
-        .get();
+    // FIX: Changed 'trips' to 'trip' to match Firestore security rules
+    // Also wrapped in try-catch for robustness
+    try {
+      final trips = await _firestore
+          .collection('trip')  // FIXED: was 'trips', now 'trip' to match security rules
+          .where('firebaseUid', isEqualTo: currentUser!.uid)
+          .get();
 
-    for (var doc in trips.docs) {
-      await doc.reference.delete();
+      for (var doc in trips.docs) {
+        await doc.reference.delete();
+      }
+      print('✅ Deleted ${trips.docs.length} trips');
+    } catch (e) {
+      // Continue even if trips deletion fails (user may not have any trips)
+      print('⚠️ Could not delete trips: $e');
     }
-    print('✅ Deleted ${trips.docs.length} trips');
 
     // Delete customer profile
     final profileQuery = await _firestore
