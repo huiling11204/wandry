@@ -1,8 +1,10 @@
 """
-Restaurant Service - FIXED FOR TIMEOUTS
+Restaurant Service - DYNAMIC PRICING VERSION
 ✅ Multiple servers with fast failover
 ✅ Shorter timeouts
 ✅ Accurate Google Maps links
+✅ 🆕 HALAL FUNCTIONALITY REMOVED
+✅ 🆕 DYNAMIC PRICING (verified vs estimated)
 """
 
 import requests
@@ -24,20 +26,44 @@ OVERPASS_SERVERS = [
 REQUEST_TIMEOUT = 15
 QUERY_TIMEOUT = 12
 
+# Country-specific base prices (in MYR)
+COUNTRY_BASE_PRICES = {
+    'malaysia': {'cheap': 15, 'moderate': 35, 'expensive': 80},
+    'singapore': {'cheap': 25, 'moderate': 55, 'expensive': 120},
+    'thailand': {'cheap': 12, 'moderate': 30, 'expensive': 70},
+    'indonesia': {'cheap': 10, 'moderate': 25, 'expensive': 60},
+    'vietnam': {'cheap': 8, 'moderate': 22, 'expensive': 55},
+    'japan': {'cheap': 35, 'moderate': 75, 'expensive': 180},
+    'korea': {'cheap': 30, 'moderate': 60, 'expensive': 140},
+    'china': {'cheap': 15, 'moderate': 40, 'expensive': 100},
+    'usa': {'cheap': 45, 'moderate': 90, 'expensive': 200},
+    'uk': {'cheap': 40, 'moderate': 80, 'expensive': 180},
+    'australia': {'cheap': 45, 'moderate': 85, 'expensive': 190},
+    'france': {'cheap': 35, 'moderate': 70, 'expensive': 160},
+    'germany': {'cheap': 30, 'moderate': 60, 'expensive': 140},
+    'italy': {'cheap': 30, 'moderate': 55, 'expensive': 130},
+    'spain': {'cheap': 25, 'moderate': 50, 'expensive': 120},
+    'india': {'cheap': 8, 'moderate': 20, 'expensive': 50},
+    'philippines': {'cheap': 10, 'moderate': 25, 'expensive': 60},
+    'taiwan': {'cheap': 20, 'moderate': 45, 'expensive': 100},
+    'hong kong': {'cheap': 30, 'moderate': 65, 'expensive': 150},
+}
+
+DEFAULT_PRICES = {'cheap': 25, 'moderate': 50, 'expensive': 110}
+
 
 def get_restaurants_with_fallback(
     city: str,
     country: str,
     meal_type: str,
     budget_level: str,
-    halal_only: bool = False,
     used_osm_ids: Set[str] = None,
     count: int = 8,
     current_location: tuple = None,
     max_travel_time: float = 30,
     city_center_coords: tuple = None
 ) -> List[Dict]:
-    """Get restaurants with fast failover"""
+    """Get restaurants with fast failover and dynamic pricing"""
 
     if used_osm_ids is None:
         used_osm_ids = set()
@@ -55,7 +81,7 @@ def get_restaurants_with_fallback(
 
     # Try increasing radii
     for radius in [2000, 5000, 8000]:
-        results = _fetch_restaurants(lat, lon, radius, meal_type, halal_only)
+        results = _fetch_restaurants(lat, lon, radius, meal_type)
 
         for r in results:
             if r['osm_id'] not in used_osm_ids and r['osm_id'] not in [x['osm_id'] for x in restaurants]:
@@ -82,7 +108,7 @@ def get_restaurants_with_fallback(
     return available[:count]
 
 
-def _fetch_restaurants(lat: float, lon: float, radius: int, meal_type: str, halal_only: bool) -> List[Dict]:
+def _fetch_restaurants(lat: float, lon: float, radius: int, meal_type: str) -> List[Dict]:
     """Fetch restaurants with simple query"""
 
     if meal_type == 'breakfast':
@@ -112,7 +138,7 @@ out 60;
                 elements = data.get('elements', [])
 
                 for el in elements:
-                    r = _parse_restaurant(el, halal_only)
+                    r = _parse_restaurant(el)
                     if r:
                         restaurants.append(r)
 
@@ -129,7 +155,7 @@ out 60;
     return restaurants
 
 
-def _parse_restaurant(el: Dict, halal_only: bool) -> Dict:
+def _parse_restaurant(el: Dict) -> Dict:
     """Parse OSM element into restaurant"""
 
     try:
@@ -144,16 +170,6 @@ def _parse_restaurant(el: Dict, halal_only: bool) -> Dict:
         if not lat or not lon:
             return None
 
-        # Halal check
-        is_halal = (
-            tags.get('diet:halal') == 'yes' or
-            'halal' in name.lower() or
-            tags.get('cuisine') == 'halal'
-        )
-
-        if halal_only and not is_halal:
-            return None
-
         # Cuisine
         cuisine = tags.get('cuisine', 'Local')
         if ';' in cuisine:
@@ -165,11 +181,11 @@ def _parse_restaurant(el: Dict, halal_only: bool) -> Dict:
             'name': name.strip(),
             'cuisine': cuisine,
             'coordinates': {'lat': lat, 'lng': lon},
-            'is_halal': is_halal,
             'phone': tags.get('phone', ''),
             'website': tags.get('website', ''),
             'opening_hours': tags.get('opening_hours', ''),
-            'tags': tags,
+            'amenity': tags.get('amenity', ''),
+            'tags': tags,  # Keep raw tags for price extraction
         }
 
     except Exception:
@@ -185,7 +201,7 @@ def _enrich_restaurants(
     current_lat: float,
     current_lon: float
 ) -> List[Dict]:
-    """Add calculated fields"""
+    """Add calculated fields including dynamic pricing"""
 
     enriched = []
 
@@ -198,22 +214,32 @@ def _enrich_restaurants(
             dist = _haversine(current_lat, current_lon, lat, lon)
             travel = (dist / 25) * 60 + 10
 
-            # Price
-            price = _estimate_price(country, budget_level, meal_type)
-            currency = _convert_currency(price, country)
+            # 🆕 DYNAMIC PRICING - Check OSM tags first, then estimate
+            price_info = _extract_price_from_osm(r.get('tags', {}), country, budget_level, meal_type, r.get('amenity', ''))
 
             # Maps link
             encoded = quote(f"{r['name']} {city} {country}")
             maps_link = f"https://www.google.com/maps/search/?api=1&query={encoded}"
 
             enriched.append({
-                **r,
+                'osm_id': r['osm_id'],
+                'name': r['name'],
+                'cuisine': r['cuisine'],
+                'coordinates': r['coordinates'],
+                'phone': r.get('phone', ''),
+                'website': r.get('website', ''),
+                'opening_hours': r.get('opening_hours', ''),
+                'amenity': r.get('amenity', ''),
                 'address': city,
                 'distance_km': round(dist, 2),
                 'travel_time_minutes': round(travel, 1),
-                'cost_myr': round(price, 2),
-                'estimated_cost_myr': round(price, 2),
-                'cost_display': currency['display'],
+                # 🆕 Dynamic pricing fields
+                'cost_myr': price_info['cost_myr'],
+                'estimated_cost_myr': price_info['cost_myr'],
+                'cost_display': price_info['display'],
+                'price_verified': price_info['verified'],
+                'price_source': price_info['source'],
+                'price_level': price_info.get('price_level'),
                 'rating': round(random.uniform(3.8, 4.8), 1),
                 'maps_link': maps_link,
                 'maps_link_direct': f"https://www.google.com/maps?q={lat},{lon}",
@@ -226,6 +252,133 @@ def _enrich_restaurants(
     return enriched
 
 
+def _extract_price_from_osm(tags: Dict, country: str, budget_level: str, meal_type: str, amenity: str) -> Dict:
+    """
+    🆕 Extract price from OSM tags if available, otherwise estimate.
+    Returns dict with cost_myr, display, verified, source, price_level
+    """
+
+    # Get country-specific prices
+    country_lower = country.lower()
+    base_prices = DEFAULT_PRICES.copy()
+    for key, prices in COUNTRY_BASE_PRICES.items():
+        if key in country_lower:
+            base_prices = prices
+            break
+
+    # Adjust base price by meal type
+    meal_multipliers = {
+        'breakfast': 0.6,
+        'lunch': 1.0,
+        'dinner': 1.3,
+        'snack': 0.4,
+        'cafe': 0.5,
+    }
+    meal_mult = meal_multipliers.get(meal_type, 1.0)
+
+    verified = False
+    source = 'estimated'
+    price_level = None
+    cost_myr = None
+
+    # 1. Check for explicit cost tags (rare but possible)
+    if tags.get('cost') or tags.get('price'):
+        cost_str = tags.get('cost') or tags.get('price')
+        # Try to parse numeric value
+        import re
+        numbers = re.findall(r'[\d.]+', str(cost_str))
+        if numbers:
+            try:
+                cost_myr = float(numbers[0])
+                # If it seems too small, might be in local currency
+                if cost_myr < 5:
+                    cost_myr = cost_myr * 4.5  # Rough MYR conversion
+                verified = True
+                source = 'osm_cost_tag'
+            except:
+                pass
+
+    # 2. Check for price_level/price_range tags (more common)
+    if not verified:
+        osm_price = tags.get('price_level') or tags.get('price_range') or tags.get('price')
+        if osm_price:
+            osm_price_str = str(osm_price).lower()
+            if osm_price_str in ['$', 'cheap', 'budget', 'low', '1', 'inexpensive']:
+                price_level = 'cheap'
+                cost_myr = base_prices['cheap'] * meal_mult
+                verified = True
+                source = 'osm_price_level'
+            elif osm_price_str in ['$$', 'moderate', 'medium', 'mid', '2', 'average']:
+                price_level = 'moderate'
+                cost_myr = base_prices['moderate'] * meal_mult
+                verified = True
+                source = 'osm_price_level'
+            elif osm_price_str in ['$$$', '$$$$', 'expensive', 'high', 'luxury', '3', '4', 'upscale']:
+                price_level = 'expensive'
+                cost_myr = base_prices['expensive'] * meal_mult
+                verified = True
+                source = 'osm_price_level'
+
+    # 3. Check cuisine type for better estimation
+    if not verified:
+        cuisine = tags.get('cuisine', '').lower()
+
+        # Fast food is typically cheaper
+        if amenity == 'fast_food' or any(x in cuisine for x in ['fast_food', 'burger', 'pizza', 'kebab', 'sandwich']):
+            price_level = 'cheap'
+            cost_myr = base_prices['cheap'] * meal_mult * random.uniform(0.8, 1.1)
+            source = 'cuisine_fast_food'
+        # Street food
+        elif any(x in cuisine for x in ['street_food', 'hawker', 'food_court']):
+            price_level = 'cheap'
+            cost_myr = base_prices['cheap'] * meal_mult * random.uniform(0.7, 1.0)
+            source = 'cuisine_street_food'
+        # Fine dining keywords
+        elif any(x in cuisine for x in ['fine_dining', 'french', 'italian', 'japanese', 'sushi', 'seafood', 'steakhouse']):
+            price_level = 'expensive'
+            cost_myr = base_prices['expensive'] * meal_mult * random.uniform(0.8, 1.2)
+            source = 'cuisine_fine_dining'
+        # Asian cuisines (varies by country)
+        elif any(x in cuisine for x in ['chinese', 'thai', 'vietnamese', 'indian', 'korean']):
+            price_level = 'moderate'
+            cost_myr = base_prices['moderate'] * meal_mult * random.uniform(0.7, 1.1)
+            source = 'cuisine_asian'
+        # Cafe is typically cheaper
+        elif amenity == 'cafe' or 'coffee' in cuisine or 'cafe' in cuisine:
+            price_level = 'cheap'
+            cost_myr = base_prices['cheap'] * meal_mult * random.uniform(0.8, 1.2)
+            source = 'amenity_cafe'
+        # Bakery
+        elif amenity == 'bakery' or 'bakery' in cuisine:
+            price_level = 'cheap'
+            cost_myr = base_prices['cheap'] * meal_mult * random.uniform(0.5, 0.8)
+            source = 'amenity_bakery'
+
+    # 4. Fall back to budget level estimation
+    if cost_myr is None:
+        budget_mult = {'Low': 0.7, 'Medium': 1.0, 'High': 1.5}.get(budget_level, 1.0)
+        cost_myr = base_prices['moderate'] * meal_mult * budget_mult * random.uniform(0.85, 1.15)
+        price_level = 'moderate'
+        source = 'budget_estimate'
+
+    # Round the cost
+    cost_myr = round(cost_myr, 2)
+
+    # Create display string with verified/estimated indicator
+    if verified:
+        display = f"RM {cost_myr:.0f} ✓"  # Checkmark for verified
+    else:
+        display = f"~RM {cost_myr:.0f}"  # Tilde for estimated
+
+    return {
+        'cost_myr': cost_myr,
+        'display': display,
+        'verified': verified,
+        'source': source,
+        'price_level': price_level,
+    }
+
+
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Distance in km"""
     from math import radians, cos, sin, asin, sqrt
@@ -233,34 +386,3 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlat, dlon = lat2 - lat1, lon2 - lon1
     a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
     return 2 * asin(sqrt(a)) * 6371
-
-
-def _estimate_price(country: str, budget: str, meal: str) -> float:
-    """Estimate meal price in MYR"""
-    base = {'breakfast': 30, 'lunch': 50, 'dinner': 80}.get(meal, 50)
-    budget_mult = {'Low': 0.7, 'Medium': 1.0, 'High': 1.5}.get(budget, 1.0)
-
-    country_mult = 1.0
-    for key, mult in {'japan': 2.5, 'usa': 2.8, 'singapore': 2.4, 'thailand': 0.9, 'malaysia': 1.0}.items():
-        if key in country.lower():
-            country_mult = mult
-            break
-
-    return base * budget_mult * country_mult * random.uniform(0.8, 1.2)
-
-
-def _convert_currency(myr: float, country: str) -> Dict:
-    """Convert to local currency display"""
-    rates = {'JPY': 33.5, 'USD': 0.22, 'THB': 7.8, 'SGD': 0.3, 'MYR': 1.0}
-    symbols = {'JPY': '¥', 'USD': '$', 'THB': '฿', 'SGD': 'S$', 'MYR': 'RM'}
-
-    curr = 'MYR'
-    for key, c in {'japan': 'JPY', 'usa': 'USD', 'thailand': 'THB', 'singapore': 'SGD'}.items():
-        if key in country.lower():
-            curr = c
-            break
-
-    local = myr * rates.get(curr, 1.0)
-    sym = symbols.get(curr, curr)
-
-    return {'display': f"RM {myr:.0f} (≈{sym}{local:.0f})", 'currency': curr}

@@ -103,11 +103,8 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
             final restaurants = data['restaurantOptions'] as List? ?? [];
             final travelTimeInfo = data['avgTravelTime'] ?? 'N/A';
 
-            // DYNAMIC PRICE LOGIC
-            String averageCostDisplay = data['currencyDisplay'] ?? '';
-            if (averageCostDisplay.isEmpty && restaurants.isNotEmpty) {
-              averageCostDisplay = _calculateDynamicPriceRange(restaurants);
-            }
+            // 🆕 DYNAMIC PRICE LOGIC - Shows verified vs estimated
+            final priceInfo = _calculateDynamicPriceInfo(restaurants);
 
             return Card(
               margin: const EdgeInsets.only(bottom: 16),
@@ -198,6 +195,7 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
                         ],
                       ),
                       const SizedBox(height: 16),
+                      // 🆕 Price display with verified/estimated indicator
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -210,10 +208,32 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
                             Icon(Icons.attach_money, size: 18, color: Colors.green[700]),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(
-                                averageCostDisplay.isEmpty ? 'View options for prices' : averageCostDisplay,
-                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.green[900]),
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    priceInfo['display'],
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.green[900]),
+                                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  ),
+                                  // Show verified indicator
+                                  if (priceInfo['hasVerified'] == true)
+                                    Row(
+                                      children: [
+                                        Icon(Icons.verified, size: 12, color: Colors.blue[600]),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Some prices verified',
+                                          style: TextStyle(fontSize: 10, color: Colors.blue[600]),
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    Text(
+                                      'Prices are estimates',
+                                      style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                                    ),
+                                ],
                               ),
                             ),
                             Icon(Icons.arrow_forward_ios, size: 16, color: Colors.orange[700]),
@@ -231,26 +251,48 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
     );
   }
 
-  /// Calculates a flexible price range based on available restaurant options.
-  String _calculateDynamicPriceRange(List options) {
-    if (options.isEmpty) return '';
+  /// 🆕 Calculates a flexible price range based on available restaurant options
+  /// Now includes verified vs estimated status
+  Map<String, dynamic> _calculateDynamicPriceInfo(List options) {
+    if (options.isEmpty) {
+      return {
+        'display': 'View options for prices',
+        'hasVerified': false,
+        'minPrice': 0,
+        'maxPrice': 0,
+      };
+    }
+
     List<double> prices = [];
+    bool hasVerified = false;
 
     for (var opt in options) {
       final optMap = opt as Map<String, dynamic>;
       double? price;
 
+      // Check if price is verified
+      if (optMap['price_verified'] == true) {
+        hasVerified = true;
+      }
+
       // 1. Try explicit cost field
-      if (optMap['estimated_cost_myr'] != null) {
+      if (optMap['cost_myr'] != null) {
+        price = double.tryParse(optMap['cost_myr'].toString());
+      }
+      if (price == null && optMap['estimated_cost_myr'] != null) {
         price = double.tryParse(optMap['estimated_cost_myr'].toString());
       }
-      // 2. Try parsing cost string (e.g., "RM 25.00")
+
+      // 2. Try parsing cost_display string (e.g., "RM 25" or "~RM 25")
       if (price == null && optMap['cost_display'] != null) {
         final str = optMap['cost_display'].toString();
         final regex = RegExp(r'(\d+([.,]\d+)?)');
         final match = regex.firstMatch(str);
-        if (match != null) price = double.tryParse(match.group(1)!.replaceAll(',', ''));
+        if (match != null) {
+          price = double.tryParse(match.group(1)!.replaceAll(',', ''));
+        }
       }
+
       // 3. Heuristics based on price level
       if (price == null && optMap['price_level'] != null) {
         final level = optMap['price_level'].toString().toLowerCase();
@@ -262,19 +304,34 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
       if (price != null && price > 0) prices.add(price);
     }
 
-    if (prices.isEmpty) return "Price based on menu";
+    if (prices.isEmpty) {
+      return {
+        'display': 'Price based on menu',
+        'hasVerified': false,
+        'minPrice': 0,
+        'maxPrice': 0,
+      };
+    }
 
     prices.sort();
     final min = prices.first.round();
     final max = prices.last.round();
 
+    String display;
     // If range is very small, show a single price average
     if ((max - min).abs() < 10) {
       final avg = (prices.reduce((a, b) => a + b) / prices.length).round();
-      return "Est. RM $avg";
+      display = hasVerified ? "RM $avg" : "Est. RM $avg";
+    } else {
+      display = hasVerified ? "RM $min - RM $max" : "Est. RM $min - RM $max";
     }
 
-    return "Est. RM $min - RM $max";
+    return {
+      'display': display,
+      'hasVerified': hasVerified,
+      'minPrice': min,
+      'maxPrice': max,
+    };
   }
 
   void _showRestaurantSelection(BuildContext context, Map<String, dynamic> item) {
@@ -344,9 +401,9 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
   }
 
   Widget _buildRestaurantCard(BuildContext context, Map<String, dynamic> restaurant, int number) {
-    final isHalal = restaurant['is_halal'] ?? false;
     final restaurantName = restaurant['name'] ?? 'Restaurant';
-    final coordinates = restaurant['coordinates'] as Map<String, dynamic>?;
+    final isVerified = restaurant['price_verified'] == true;
+    final priceDisplay = restaurant['cost_display'] ?? 'Price varies';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -362,9 +419,28 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
                 Icon(Icons.star, size: 14, color: Colors.amber[700]),
                 Text(' ${restaurant['rating'] ?? 4.0}'),
                 const SizedBox(width: 10),
-                if (isHalal) const Text('HALAL', style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
+                // 🆕 Show distance
+                if (restaurant['distance_km'] != null) ...[
+                  Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
+                  Text(' ${restaurant['distance_km']} km', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                ],
               ]),
-              Text(restaurant['cost_display'] ?? 'Price varies', style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.w500)),
+              // 🆕 Price with verified indicator
+              Row(
+                children: [
+                  Text(
+                    priceDisplay,
+                    style: TextStyle(
+                      color: Colors.green[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (isVerified) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.verified, size: 14, color: Colors.blue[600]),
+                  ],
+                ],
+              ),
             ]),
             trailing: IconButton(
               icon: const Icon(Icons.map, color: Colors.blue),

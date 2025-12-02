@@ -1,5 +1,6 @@
 // lib/controller/trip_edit_controller.dart
 // Handles trip-level editing (preferences, dates, destination)
+// 🆕 HALAL PARAMETER REMOVED
 
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -81,7 +82,6 @@ class TripEditController {
     DateTime? endDate,
     String? budgetLevel,
     List<String>? destinationTypes,
-    bool? halalOnly,
   }) async {
     onLoadingChanged?.call(true);
 
@@ -107,7 +107,6 @@ class TripEditController {
       final newBudgetLevel = budgetLevel ?? existingData['budgetLevel'] ?? 'Medium';
       final newDestinationTypes = destinationTypes ??
           (existingData['destinationTypes'] as List?)?.cast<String>() ?? ['relaxing'];
-      final newHalalOnly = halalOnly ?? existingData['halalOnly'] ?? false;
 
       // 3. Delete existing itinerary items
       await _deleteExistingItinerary(tripId);
@@ -122,7 +121,6 @@ class TripEditController {
         'endDate': Timestamp.fromDate(newEndDate),
         'budgetLevel': newBudgetLevel,
         'destinationTypes': newDestinationTypes,
-        'halalOnly': newHalalOnly,
         'generationStatus': 'pending',
         'generationProgress': 0,
         'progressMessage': 'Starting regeneration...',
@@ -144,7 +142,6 @@ class TripEditController {
         'endDate': newEndDate.toIso8601String(),
         'budgetLevel': newBudgetLevel,
         'destinationTypes': newDestinationTypes,
-        'halalOnly': newHalalOnly,
       });
 
       return true;

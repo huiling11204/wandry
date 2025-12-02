@@ -951,50 +951,485 @@ class _ItineraryTabState extends State<ItineraryTab> {
     }
   }
 
+  // ============================================================
+// UPDATED _showWeatherDetails METHOD WITH WEATHER ADVICE
+// Replace your existing _showWeatherDetails method with this one
+// ============================================================
+
   void _showWeatherDetails(BuildContext context, Map<String, dynamic> weather) {
+    // Generate weather advice based on conditions
+    final advice = _generateWeatherAdvice(weather);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.85,
         builder: (context, scrollController) {
           return Container(
-            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
-                const SizedBox(height: 20),
-                const Text('Weather Forecast', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [_getWeatherBackgroundColor(weather), _getWeatherBackgroundColor(weather).withOpacity(0.7)]),
-                    borderRadius: BorderRadius.circular(16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Handle
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(IconHelper.getWeatherIcon(weather['description'] ?? ''), size: 64, color: Colors.white),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${weather['temp']?.toStringAsFixed(0) ?? '--'}°C', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
-                          Text(weather['description'] ?? '', style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.9))),
+
+                  // Title
+                  const Text(
+                    'Weather Forecast',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Main Weather Card
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          _getWeatherBackgroundColor(weather),
+                          _getWeatherBackgroundColor(weather).withOpacity(0.7),
                         ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _getWeatherBackgroundColor(weather).withOpacity(0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              IconHelper.getWeatherIcon(weather['description'] ?? ''),
+                              size: 64,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${weather['temp']?.toStringAsFixed(0) ?? '--'}°C',
+                                    style: const TextStyle(
+                                      fontSize: 48,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  Text(
+                                    weather['description'] ?? 'Unknown',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      color: Colors.white.withOpacity(0.9),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        // Temperature Range
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildWeatherStat(
+                              icon: Icons.arrow_upward,
+                              label: 'High',
+                              value: '${weather['temp_max']?.toStringAsFixed(0) ?? '--'}°C',
+                            ),
+                            _buildWeatherStat(
+                              icon: Icons.arrow_downward,
+                              label: 'Low',
+                              value: '${weather['temp_min']?.toStringAsFixed(0) ?? '--'}°C',
+                            ),
+                            _buildWeatherStat(
+                              icon: Icons.thermostat,
+                              label: 'Feels',
+                              value: '${weather['feels_like']?.toStringAsFixed(0) ?? weather['temp']?.toStringAsFixed(0) ?? '--'}°C',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Weather Details Grid
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildDetailCard(
+                          icon: Icons.water_drop,
+                          iconColor: Colors.blue,
+                          label: 'Rain Chance',
+                          value: '${weather['rain_probability'] ?? 0}%',
+                          bgColor: Colors.blue[50]!,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildDetailCard(
+                          icon: Icons.air,
+                          iconColor: Colors.teal,
+                          label: 'Wind Speed',
+                          value: '${weather['wind_speed']?.toStringAsFixed(0) ?? '--'} km/h',
+                          bgColor: Colors.teal[50]!,
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildDetailCard(
+                          icon: Icons.opacity,
+                          iconColor: Colors.indigo,
+                          label: 'Humidity',
+                          value: '${weather['humidity'] ?? 60}%',
+                          bgColor: Colors.indigo[50]!,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildDetailCard(
+                          icon: Icons.visibility,
+                          iconColor: Colors.grey,
+                          label: 'Forecast',
+                          value: weather['is_forecast'] == true ? 'Live' : 'Estimate',
+                          bgColor: Colors.grey[100]!,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Weather Advice Section
+                  if (advice.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Icon(Icons.tips_and_updates, color: Colors.amber[700], size: 24),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Weather Advice',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ...advice.map((tip) => _buildAdviceCard(tip)),
+                  ],
+
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
           );
         },
       ),
     );
+  }
+
+// Helper widget for weather stats in main card
+  Widget _buildWeatherStat({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white70, size: 18),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.8),
+            fontSize: 12,
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+// Helper widget for detail cards
+  Widget _buildDetailCard({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+    required Color bgColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: iconColor.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: iconColor.withOpacity(0.9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Helper widget for advice cards
+  Widget _buildAdviceCard(Map<String, dynamic> tip) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            (tip['color'] as Color).withOpacity(0.1),
+            (tip['color'] as Color).withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: (tip['color'] as Color).withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: (tip['color'] as Color).withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              tip['emoji'] as String,
+              style: const TextStyle(fontSize: 20),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tip['title'] as String,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: tip['color'] as Color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  tip['message'] as String,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[700],
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Generate weather advice based on conditions
+  List<Map<String, dynamic>> _generateWeatherAdvice(Map<String, dynamic> weather) {
+    final advice = <Map<String, dynamic>>[];
+
+    final temp = (weather['temp'] as num?)?.toDouble() ?? 25;
+    final tempMax = (weather['temp_max'] as num?)?.toDouble() ?? temp;
+    final rainProb = (weather['rain_probability'] as num?)?.toInt() ?? 0;
+    final windSpeed = (weather['wind_speed'] as num?)?.toDouble() ?? 0;
+    final humidity = (weather['humidity'] as num?)?.toInt() ?? 60;
+    final description = (weather['description'] as String? ?? '').toLowerCase();
+
+    // Rain advice
+    if (rainProb >= 70) {
+      advice.add({
+        'emoji': '☔',
+        'title': 'Rain Expected',
+        'message': 'High chance of rain today. Bring an umbrella and consider waterproof footwear. Plan indoor activities as backup.',
+        'color': Colors.blue[700]!,
+      });
+    } else if (rainProb >= 40) {
+      advice.add({
+        'emoji': '🌂',
+        'title': 'Possible Showers',
+        'message': 'There\'s a chance of rain. Pack a compact umbrella just in case.',
+        'color': Colors.blue[600]!,
+      });
+    }
+
+    // Hot weather advice
+    if (tempMax >= 35) {
+      advice.add({
+        'emoji': '🥵',
+        'title': 'Very Hot Day',
+        'message': 'Extreme heat expected. Stay hydrated, apply sunscreen frequently, and seek shade during midday (11am-3pm).',
+        'color': Colors.red[700]!,
+      });
+    } else if (tempMax >= 30) {
+      advice.add({
+        'emoji': '☀️',
+        'title': 'Hot & Sunny',
+        'message': 'It\'s going to be warm! Drink plenty of water, wear sunscreen (SPF 30+), and bring a hat.',
+        'color': Colors.orange[700]!,
+      });
+    }
+
+    // Cold weather advice
+    if (temp <= 10) {
+      advice.add({
+        'emoji': '🥶',
+        'title': 'Cold Weather',
+        'message': 'Bundle up! Wear layers, a warm jacket, and consider gloves and a scarf.',
+        'color': Colors.cyan[700]!,
+      });
+    } else if (temp <= 18) {
+      advice.add({
+        'emoji': '🧥',
+        'title': 'Cool Temperature',
+        'message': 'Bring a light jacket or sweater, especially for evenings.',
+        'color': Colors.teal[600]!,
+      });
+    }
+
+    // Wind advice
+    if (windSpeed >= 30) {
+      advice.add({
+        'emoji': '💨',
+        'title': 'Strong Winds',
+        'message': 'Very windy conditions. Secure loose items and be careful with umbrellas. Avoid outdoor viewpoints.',
+        'color': Colors.blueGrey[700]!,
+      });
+    } else if (windSpeed >= 20) {
+      advice.add({
+        'emoji': '🍃',
+        'title': 'Breezy Day',
+        'message': 'Moderate winds expected. Great for keeping cool but secure your hat!',
+        'color': Colors.teal[500]!,
+      });
+    }
+
+    // Humidity advice
+    if (humidity >= 85 && temp >= 28) {
+      advice.add({
+        'emoji': '💦',
+        'title': 'High Humidity',
+        'message': 'Very humid conditions. Wear breathable fabrics, take breaks in air-conditioned spaces.',
+        'color': Colors.purple[600]!,
+      });
+    }
+
+    // Thunderstorm advice
+    if (description.contains('thunder') || description.contains('storm')) {
+      advice.add({
+        'emoji': '⛈️',
+        'title': 'Thunderstorms',
+        'message': 'Storms expected. Avoid open areas, tall structures, and water activities. Have indoor backup plans.',
+        'color': Colors.deepPurple[700]!,
+      });
+    }
+
+    // Fog advice
+    if (description.contains('fog') || description.contains('mist')) {
+      advice.add({
+        'emoji': '🌫️',
+        'title': 'Low Visibility',
+        'message': 'Foggy conditions may affect views at scenic spots. Check conditions before visiting viewpoints.',
+        'color': Colors.grey[600]!,
+      });
+    }
+
+    // Good weather advice
+    if (advice.isEmpty && rainProb < 30 && temp >= 20 && temp <= 28) {
+      advice.add({
+        'emoji': '✨',
+        'title': 'Perfect Weather!',
+        'message': 'Great conditions for sightseeing! Comfortable temperature with low rain chance. Enjoy your day!',
+        'color': Colors.green[600]!,
+      });
+    }
+
+    // UV advice for clear days
+    if ((description.contains('clear') || description.contains('sunny')) && tempMax >= 25 && rainProb < 30) {
+      advice.add({
+        'emoji': '🧴',
+        'title': 'UV Protection',
+        'message': 'Clear skies mean strong UV rays. Apply sunscreen every 2 hours and wear sunglasses.',
+        'color': Colors.amber[700]!,
+      });
+    }
+
+    return advice;
   }
 
   void _showRestaurantSelection(BuildContext context, Map<String, dynamic> item) {

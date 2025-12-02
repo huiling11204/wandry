@@ -1,4 +1,5 @@
 // Page for editing trip preferences (destination, dates, budget, styles)
+// 🆕 HALAL TOGGLE REMOVED
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:wandry/controller/trip_edit_controller.dart';
@@ -32,7 +33,6 @@ class _EditTripPreferencesPageState extends State<EditTripPreferencesPage> {
   DateTime? _endDate;
   String _budgetLevel = 'Medium';
   List<String> _destinationTypes = ['relaxing'];
-  bool _halalOnly = false;
 
   // UI state
   bool _isLoading = false;
@@ -63,7 +63,6 @@ class _EditTripPreferencesPageState extends State<EditTripPreferencesPage> {
     _endDate = _parseDate(data['endDate']);
     _budgetLevel = data['budgetLevel'] ?? 'Medium';
     _destinationTypes = (data['destinationTypes'] as List?)?.cast<String>() ?? ['relaxing'];
-    _halalOnly = data['halalOnly'] ?? false;
   }
 
   DateTime? _parseDate(dynamic value) {
@@ -327,24 +326,6 @@ class _EditTripPreferencesPageState extends State<EditTripPreferencesPage> {
                 selectedTypeIds: _destinationTypes,
                 onSelectionChanged: (types) {
                   setState(() => _destinationTypes = types);
-                  _checkForChanges();
-                },
-              ),
-            ),
-
-            // Halal Option
-            _buildSection(
-              title: 'Dietary Preferences',
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Halal restaurants only'),
-                subtitle: Text(
-                  'Show only halal-certified restaurant options',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-                value: _halalOnly,
-                onChanged: (value) {
-                  setState(() => _halalOnly = value);
                   _checkForChanges();
                 },
               ),
@@ -783,7 +764,6 @@ class _EditTripPreferencesPageState extends State<EditTripPreferencesPage> {
       endDate: _endDate,
       budgetLevel: _budgetLevel,
       destinationTypes: _destinationTypes,
-      halalOnly: _halalOnly,
     );
   }
 }
