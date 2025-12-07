@@ -5,8 +5,7 @@ import '../../controller/theme_controller.dart';
 import '../../widget/sweet_alert_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-/// AdminDashboard - Main admin dashboard screen with dark mode support
-/// Place this in lib/screen/admin/admin_dashboard.dart
+// Admin Dashboard - displays stats, quick actions, and navigation sidebar
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
 
@@ -15,20 +14,23 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
+  // Service instances for auth, admin operations, and theming
   final AuthService _authService = AuthService();
   final AdminService _adminService = AdminService();
   final ThemeController _themeController = ThemeController();
 
+  // State variables
   Map<String, dynamic>? _adminProfile;
   bool _isLoading = true;
   int _selectedIndex = 0;
 
-  // Dashboard stats from Firebase
+  // Dashboard statistics from Firebase
   int _totalUsers = 0;
   int _totalCustomers = 0;
   int _totalAdmins = 0;
   int _totalFeedback = 0;
 
+  // Initialize data and theme listener on widget load
   @override
   void initState() {
     super.initState();
@@ -36,23 +38,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
     _themeController.addListener(_onThemeChanged);
   }
 
+  // Clean up theme listener
   @override
   void dispose() {
     _themeController.removeListener(_onThemeChanged);
     super.dispose();
   }
 
+  // Rebuild UI when theme changes
   void _onThemeChanged() {
     if (mounted) setState(() {});
   }
 
+  // Shortcut getter for theme controller
   ThemeController get tc => _themeController;
 
+  // Load both admin profile and dashboard stats
   Future<void> _loadAllData() async {
     await _loadAdminData();
     await _loadDashboardStats();
   }
 
+  // Fetch current admin's profile from Firebase
   Future<void> _loadAdminData() async {
     try {
       User? currentUser = _authService.currentUser;
@@ -82,6 +89,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  // Fetch user statistics and feedback count from Firebase
   Future<void> _loadDashboardStats() async {
     try {
       final stats = await _adminService.getUserStatistics();
@@ -115,11 +123,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  // Refresh all data (pull-to-refresh)
   Future<void> _refreshData() async {
     setState(() => _isLoading = true);
     await _loadAllData();
   }
 
+  // Show logout confirmation and sign out user
   Future<void> _handleLogout() async {
     final confirm = await SweetAlertDialog.confirm(
       context: context,
@@ -137,11 +147,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  // Navigation methods for quick actions
   void _navigateToUsers() => Navigator.pushNamed(context, '/admin-users');
   void _navigateToFeedback() => Navigator.pushNamed(context, '/admin-feedback');
   void _navigateToReports() => Navigator.pushNamed(context, '/admin-reports');
   void _navigateToSettings() => Navigator.pushNamed(context, '/admin-settings');
 
+  // Main dashboard content with stats grid, quick actions, and system info
   Widget _buildDashboardContent() {
     return Container(
       color: tc.backgroundColor,
@@ -153,6 +165,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Welcome header
               Text('Admin Dashboard', style: tc.titleStyle(fontSize: 22)),
               const SizedBox(height: 4),
               Text(
@@ -161,7 +174,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
               const SizedBox(height: 24),
 
-              // Stats Cards
+              // Stats cards grid (users, customers, admins, feedback)
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -178,6 +191,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
               const SizedBox(height: 24),
 
+              // Quick action buttons section
               Text('Quick Actions', style: tc.titleStyle(fontSize: 16)),
               const SizedBox(height: 12),
 
@@ -206,7 +220,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
               const SizedBox(height: 24),
 
-              // System Info
+              // System info card showing admin details
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -239,6 +253,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  // Stat card widget displaying icon, value, and title
   Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -273,6 +288,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  // Tappable action card with icon, title, and subtitle
   Widget _buildQuickActionCard(
       String title,
       String subtitle,
@@ -324,6 +340,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  // Info row with label and value
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -348,8 +365,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  // Main build - shows loading state or responsive layout
   @override
   Widget build(BuildContext context) {
+    // Show loading spinner while fetching data
     if (_isLoading) {
       return Scaffold(
         backgroundColor: tc.backgroundColor,
@@ -366,8 +385,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
       );
     }
 
+    // Check if mobile layout needed
     final isMobile = MediaQuery.of(context).size.width < 600;
 
+    // Mobile uses drawer, desktop uses fixed sidebar
     return Scaffold(
       backgroundColor: tc.backgroundColor,
       appBar: isMobile
@@ -393,6 +414,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ? _buildDashboardContent()
           : Row(
         children: [
+          // Desktop sidebar
           Container(
             width: 250,
             decoration: BoxDecoration(
@@ -413,6 +435,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  // Sidebar with logo, menu items, and logout button
   Widget _buildSidebar() {
     final sidebarTextColor = tc.isDarkMode ? Colors.white : Colors.black87;
     final sidebarSubtitleColor = tc.isDarkMode ? Colors.grey[400] : Colors.black54;
@@ -420,6 +443,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return SafeArea(
       child: Column(
         children: [
+          // App logo and name
           Container(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             child: Row(
@@ -449,6 +473,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           ),
           Divider(color: tc.isDarkMode ? Colors.grey[700] : Colors.black12, thickness: 1),
+
+          // Navigation menu items
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -476,6 +502,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ],
             ),
           ),
+
+          // Logout button
           Padding(
             padding: const EdgeInsets.all(16),
             child: Container(
@@ -522,6 +550,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  // Menu item with selection highlight
   Widget _buildMenuItem(int index, IconData icon, String title, VoidCallback onTap) {
     final isSelected = _selectedIndex == index;
     final sidebarTextColor = tc.isDarkMode ? Colors.white : Colors.black87;

@@ -1,6 +1,10 @@
+// ============================================
+// LOGIN PAGE - Complete with Email Verification Support
+// Location: lib/screen/login_page.dart
+// ============================================
 import 'package:flutter/material.dart';
 import '../controller/userAuth.dart';
-import '../controller/auth_wrapper.dart'; // ADD THIS
+import '../controller/auth_wrapper.dart';
 import '../utilities/validators.dart';
 import '../widget/custom_text_field.dart';
 
@@ -15,7 +19,7 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
-  final AuthWrapper _authWrapper = AuthWrapper(); // ADD THIS
+  final AuthWrapper _authWrapper = AuthWrapper();
 
   String _email = '';
   String _password = '';
@@ -26,6 +30,10 @@ class _LoginPageState extends State<LoginPage> {
   bool _isPasswordValid = false;
   String _emailError = '';
   String _passwordError = '';
+
+  // For email verification message
+  String? verificationMessage;
+  String? suggestedEmail;
 
   // Focus nodes for border color changes
   final FocusNode _emailFocusNode = FocusNode();
@@ -40,6 +48,26 @@ class _LoginPageState extends State<LoginPage> {
     // Listen to focus changes to trigger rebuilds
     _emailFocusNode.addListener(() => setState(() {}));
     _passwordFocusNode.addListener(() => setState(() {}));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // Check if we received arguments from email verification redirect
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+
+    if (args != null) {
+      setState(() {
+        verificationMessage = args['message'] as String?;
+        suggestedEmail = args['newEmail'] as String?;
+
+        // Pre-fill email field if provided
+        if (suggestedEmail != null && suggestedEmail!.isNotEmpty) {
+          _emailController.text = suggestedEmail!;
+        }
+      });
+    }
   }
 
   @override
@@ -79,7 +107,7 @@ class _LoginPageState extends State<LoginPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {  // ✅ Renamed to dialogContext
+      builder: (BuildContext dialogContext) {
         return Dialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -105,7 +133,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 20),
                 Text(
                   isSuccess ? 'Login Successful' : 'Login Failed',
-                  style: Theme.of(dialogContext).textTheme.titleLarge,  // ✅ Use dialogContext for theme
+                  style: Theme.of(dialogContext).textTheme.titleLarge,
                   textAlign: TextAlign.center,
                 ),
                 if (!isSuccess && errorMessage != null)
@@ -113,7 +141,7 @@ class _LoginPageState extends State<LoginPage> {
                     padding: const EdgeInsets.only(top: 12.0),
                     child: Text(
                       errorMessage,
-                      style: Theme.of(dialogContext).textTheme.bodyMedium,  // ✅ Use dialogContext
+                      style: Theme.of(dialogContext).textTheme.bodyMedium,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -122,15 +150,14 @@ class _LoginPageState extends State<LoginPage> {
                   width: double.infinity,
                   child: OutlinedButton(
                     onPressed: () async {
-                      Navigator.of(dialogContext).pop();  // ✅ Close dialog using dialogContext
+                      Navigator.of(dialogContext).pop();
 
                       if (isSuccess) {
-                        // ✅ Now use the LoginPage's context (via mounted check)
                         if (mounted) {
                           String route = await _authWrapper.determineInitialRoute();
-                          if (mounted) {  // ✅ Check again after async call
+                          if (mounted) {
                             Navigator.pushNamedAndRemoveUntil(
-                              context,  // ✅ This is LoginPage's context, not dialog's
+                              context,
                               route,
                                   (route) => false,
                             );
@@ -207,6 +234,48 @@ class _LoginPageState extends State<LoginPage> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 60),
+
+                // Email Verification Success Banner
+                if (verificationMessage != null)
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    margin: EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle_outline,
+                            color: Colors.green[700], size: 24),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Email Verified! ✓',
+                                style: TextStyle(
+                                  color: Colors.green[900],
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Please log in with your new email address',
+                                style: TextStyle(
+                                  color: Colors.green[800],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Welcome Title - CENTERED
                 RichText(

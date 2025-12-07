@@ -2,22 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../controller/userAuth.dart';
 
-/// AuthWrapper - Business logic for routing authenticated users
-/// Place this in lib/controller/auth_wrapper.dart
+/// Handles routing users to correct screen based on login status and role
 class AuthWrapper {
   final AuthService _authService = AuthService();
 
-  /// Check user authentication and return appropriate route
+  /// Checks if user is logged in and returns the correct route
   Future<String> determineInitialRoute() async {
     User? currentUser = _authService.currentUser;
 
+    // Not logged in - go to welcome screen
     if (currentUser == null) {
       return '/welcome';
     }
 
     try {
+      // Get user profile from database
       Map<String, dynamic>? userProfile = await _authService.getUserProfile(currentUser.uid);
-
+      // No profile found - sign out and go to welcome
       if (userProfile == null) {
         await _authService.signOut();
         return '/welcome';
@@ -25,13 +26,14 @@ class AuthWrapper {
 
       String? role = userProfile['role'];
 
+      // Route based on role
       if (role == 'Admin') {
         return '/admin-dashboard';
       } else if (role == 'Customer') {
         return '/home';
       }
 
-      // Unknown role
+      // Unknown role - sign out for safety
       await _authService.signOut();
       return '/welcome';
 
@@ -42,7 +44,7 @@ class AuthWrapper {
     }
   }
 
-  /// Get user role for conditional UI rendering
+  /// Returns the current user's role (Admin/Customer)
   Future<String?> getUserRole() async {
     User? currentUser = _authService.currentUser;
     if (currentUser == null) return null;
@@ -56,13 +58,13 @@ class AuthWrapper {
     }
   }
 
-  /// Check if current user is admin
+  /// Returns true if current user is an admin
   Future<bool> isAdmin() async {
     String? role = await getUserRole();
     return role == 'Admin';
   }
 
-  /// Check if current user is customer
+  /// Returns true if current user is a customer
   Future<bool> isCustomer() async {
     String? role = await getUserRole();
     return role == 'Customer';

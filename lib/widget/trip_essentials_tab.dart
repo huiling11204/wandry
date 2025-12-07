@@ -1,5 +1,4 @@
-// lib/widget/trip_essentials_tab.dart
-// Trip Essentials Tab - Emergency info, currency converter, phrases, packing list
+// Emergency info, currency converter, phrases, packing list
 // All customized based on destination country
 
 import 'package:flutter/material.dart';

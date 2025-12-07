@@ -1,7 +1,3 @@
-// lib/widget/destination_type_selector_widget.dart
-// COMPLETE MERGED VERSION: Original destination_type_selector_widget.dart + Additional display widgets
-// FIXED: RenderFlex overflow issue - reduced padding and spacing
-
 import 'package:flutter/material.dart';
 import '../model/destination_type_model.dart';
 
@@ -114,7 +110,6 @@ class DestinationTypeSelectorWidget extends StatelessWidget {
           ),
         ),
 
-        // Grid of destination types - FIXED: Increased aspect ratio for more height
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -190,12 +185,12 @@ class _DestinationTypeCard extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              // FIXED: Use LayoutBuilder to adapt to available space
+              // Use LayoutBuilder to adapt to available space
               Padding(
-                padding: const EdgeInsets.all(10), // FIXED: Reduced from 12
+                padding: const EdgeInsets.all(10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min, // FIXED: Changed to min
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Icon row
                     Row(
@@ -344,7 +339,7 @@ class DestinationTypeChips extends StatelessWidget {
 }
 
 // ============================================
-// NEW: Additional widgets for edit feature
+// widgets for edit feature
 // ============================================
 
 /// Compact chip with emoji - used in trip info card

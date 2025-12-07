@@ -1,5 +1,3 @@
-// lib/screen/nearby_attractions_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../controller/overpass_controller.dart';

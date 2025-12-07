@@ -1,8 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-
-/// LegalDocument Model - Data structure for Terms & Privacy Policy
-/// Place this in lib/model/legal_document_model.dart
-
+/// Data structure for Terms & Privacy Policy
 class LegalDocument {
   final String id;
   final String title;

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/export_controller.dart';
 
-/// Example of how to use the Export and Share functions in your UI
 class ExportShareBottomSheet extends StatelessWidget {
   final String tripId;
   final ExportController exportController;
@@ -194,7 +193,6 @@ class ExportShareBottomSheet extends StatelessWidget {
   }
 }
 
-/// Example: How to add a button in your Trip Detail page
 class ExportButton extends StatelessWidget {
   final String tripId;
 
@@ -213,7 +211,6 @@ class ExportButton extends StatelessWidget {
   }
 }
 
-/// Or use as an AppBar action
 class ExportIconButton extends StatelessWidget {
   final String tripId;
 
@@ -231,7 +228,6 @@ class ExportIconButton extends StatelessWidget {
   }
 }
 
-/// Or use as a prominent card button
 class ExportCard extends StatelessWidget {
   final String tripId;
 

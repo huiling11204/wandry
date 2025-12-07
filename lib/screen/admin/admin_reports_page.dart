@@ -13,28 +13,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:wandry/widget/sweet_alert_dialog.dart';
 
-/// AdminReportsPage - Comprehensive reports and analytics
-///
-/// FIRESTORE COLLECTION: generated_reports
-///
-/// Data Dictionary Structure:
-/// - reportLogID (Primary, Unique) - Unique identifier for a report log entry
-/// - adminProfileID (Foreign) - Links to the adminProfileID in the Admin Profile table
-/// - reportTypeGenerated - Type of report generated
-/// - startDateParam - Start date parameter used for the report
-/// - endDateParam - End date parameter used for the report
-/// - generationTimestamp - Timestamp of when the report was generated
-/// - outputFormat - Format of the generated report (pdf/excel)
-/// - status - Status of the report generation (Generating/Completed/Failed)
-/// - filePath - Local file path for the generated file
-/// - fileSize - File size in bytes
-///
-/// Required packages in pubspec.yaml:
-/// - pdf: ^3.10.0
-/// - path_provider: ^2.1.0
-/// - open_file: ^3.3.2
-/// - excel: ^4.0.0
-/// - share_plus: ^7.2.0
+/// Comprehensive reports and analytics
+
 
 // ============================================================
 // REPORT TYPE ENUM

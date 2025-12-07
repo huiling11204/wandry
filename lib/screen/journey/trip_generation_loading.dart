@@ -1,6 +1,3 @@
-// lib/pages/trip_generation_loading_page.dart
-// FIXED: Derive status from progress, proper cleanup, delete failed trips
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';

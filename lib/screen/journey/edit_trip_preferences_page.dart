@@ -1,5 +1,4 @@
-// Page for editing trip preferences (destination, dates, budget, styles)
-// 🆕 HALAL TOGGLE REMOVED
+//Edit trip preferences (destination, dates, budget, styles)
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:wandry/controller/trip_edit_controller.dart';
@@ -256,18 +255,37 @@ class _EditTripPreferencesPageState extends State<EditTripPreferencesPage> {
                         itemCount: _searchResults.length,
                         itemBuilder: (context, index) {
                           final result = _searchResults[index];
+                          final address = result['address'] as Map<String, dynamic>?;
+                          final cityName = address?['city']?.toString() ?? '';
+                          final countryName = address?['country']?.toString() ?? '';
+
                           return ListTile(
                             leading: const Icon(Icons.place),
-                            title: Text(result['name'] ?? ''),
+                            title: Text(
+                              result['name']?.toString().split(',').first ?? 'Unknown',
+                            ),
                             subtitle: Text(
-                              '${result['city'] ?? ''}, ${result['country'] ?? ''}',
+                              cityName.isNotEmpty && countryName.isNotEmpty
+                                  ? '$cityName, $countryName'
+                                  : result['name']?.toString() ?? '',
                             ),
                             onTap: () {
                               setState(() {
                                 _selectedDestination = result;
-                                _city = result['city'] ?? result['name'] ?? '';
-                                _country = result['country'] ?? '';
-                                _destinationController.text = '$_city, $_country';
+
+                                // Extract city - try address first, then parse from name
+                                _city = cityName.isNotEmpty
+                                    ? cityName
+                                    : result['name']?.toString().split(',').first.trim() ?? '';
+
+                                // Extract country from address
+                                _country = countryName;
+
+                                // Update text field
+                                _destinationController.text = _city.isNotEmpty && _country.isNotEmpty
+                                    ? '$_city, $_country'
+                                    : result['name']?.toString() ?? '';
+
                                 _searchResults = [];
                               });
                               _checkForChanges();

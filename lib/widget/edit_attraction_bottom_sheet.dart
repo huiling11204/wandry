@@ -1,6 +1,4 @@
-// lib/widget/edit_attraction_bottom_sheet.dart
-// COMPLETE VERSION: Bottom sheet for editing a single attraction item
-// Includes: Replace, Skip, Extend/Shorten time, Add note, Reorder info
+// Includes Replace, Skip, Extend/Shorten time, Add note, Reorder info
 
 import 'package:flutter/material.dart';
 import '../controller/itinerary_edit_controller.dart';

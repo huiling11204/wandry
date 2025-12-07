@@ -1,6 +1,4 @@
-// lib/controller/trip_essentials_controller.dart
-// Controller for Trip Essentials tab - manages packing list and currency conversion
-
+// manages packing list and currency conversion
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utilities/country_data_helper.dart';

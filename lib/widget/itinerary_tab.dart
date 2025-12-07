@@ -1,13 +1,3 @@
-// lib/widget/itinerary_tab.dart
-//
-// FINAL VERSION v4.0 - PROPER LOADING STATE
-// ✅ Shows hotel every day with SAME purple theme
-// ✅ Shows loading placeholders first (no flickering MYR→JPY)
-// ✅ Fetches REAL data from OpenStreetMap (using coordinates)
-// ✅ Falls back to Wikidata → Wikipedia → Smart estimates
-// ✅ Shows "Verified" vs "Estimated" badges
-// ✅ All existing functionality preserved
-
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -229,9 +219,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
     );
   }
 
-  // ============================================================
-  // HOTEL ENTRY - SAME PURPLE THEME FOR ALL DAYS
-  // ============================================================
   Widget _buildAccommodationEntry(BuildContext context, Map<String, dynamic> accData, int dayNumber) {
     final isFirstDay = dayNumber == 1;
 
@@ -951,10 +938,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
     }
   }
 
-  // ============================================================
-// UPDATED _showWeatherDetails METHOD WITH WEATHER ADVICE
-// Replace your existing _showWeatherDetails method with this one
-// ============================================================
 
   void _showWeatherDetails(BuildContext context, Map<String, dynamic> weather) {
     // Generate weather advice based on conditions
@@ -1487,10 +1470,6 @@ class _ItineraryTabState extends State<ItineraryTab> {
     );
   }
 
-  // ============================================================
-  // ✅ DESTINATION DETAILS - FETCH DATA FIRST, THEN SHOW
-  // No more flickering MYR → JPY
-  // ============================================================
 
   void _showDestinationDetails(BuildContext context, Map<String, dynamic> item, String country) async {
     // Show loading sheet first with NO data (just placeholders)

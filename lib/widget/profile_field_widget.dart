@@ -1,7 +1,3 @@
-// ============================================
-// REUSABLE PROFILE WIDGETS
-// Location: lib/widget/profile_field_widget.dart
-// ============================================
 import 'package:flutter/material.dart';
 
 // ---------------------------------------------------

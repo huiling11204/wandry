@@ -1,6 +1,4 @@
-// lib/controller/trip_generation_controller.dart
-// UPDATED: Real-time progress tracking with user-friendly error handling
-
+// Real-time progress tracking with user-friendly error handling
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';

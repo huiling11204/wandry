@@ -1,4 +1,3 @@
-// lib/utilities/string_helper.dart
 class StringHelper {
   // Extract English place name
   static String extractEnglishPlaceName(Map<String, dynamic> place) {

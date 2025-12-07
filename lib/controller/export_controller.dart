@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/pdf.dart';
@@ -12,18 +11,17 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import '../model/trip_model.dart';
 
-/// LIGHTWEIGHT Export Controller - Optimized for Large Trips
-/// Limits content to prevent memory issues
+/// Exports trip itinerary as PDF or text
 class ExportController{
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // ==================== PUBLIC METHODS ====================
-
-  /// Export trip to PDF and save to device
+  /// Exports trip to PDF and opens preview
   Future<void> exportToPdf(String tripId, BuildContext context) async {
     if (!context.mounted) return;
 
     BuildContext? dialogContext;
+
+    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -47,6 +45,7 @@ class ExportController{
     try {
       await Future.delayed(const Duration(milliseconds: 100));
 
+      // Fetch all trip data
       print('📄 Fetching trip data...');
       final trip = await _fetchTripData(tripId);
       print('✅ Trip data fetched: ${trip.tripName}');
@@ -57,6 +56,7 @@ class ExportController{
       final accommodationDoc = await _fetchAccommodation(tripId);
       print('✅ Accommodation doc exists: ${accommodationDoc?.exists ?? false}');
 
+      // Generate PDF with timeout
       print('📄 Generating lightweight PDF...');
       final pdfBytes = await _generatePdfBytes(
         trip,
@@ -71,38 +71,31 @@ class ExportController{
       );
       print('✅ PDF generated: ${pdfBytes.length} bytes');
 
+      // Save to file
       final fileName = '${trip.tripName.replaceAll(' ', '_')}_Itinerary.pdf';
       final output = await getApplicationDocumentsDirectory();
       final file = File('${output.path}/$fileName');
       await file.writeAsBytes(pdfBytes);
       print('✅ PDF saved to: ${file.path}');
 
-      print('🔧 Checking context before closing dialog...');
-      print('🔧 Context mounted: ${context.mounted}');
-
-      // Close dialog if possible
+      // Close loading dialog
       print('🔧 Closing dialog...');
       final ctx = dialogContext;
       if (ctx != null && ctx.mounted) {
         Navigator.of(ctx).pop();
         print('🔧 Dialog closed');
-      } else {
-        print('⚠️ Dialog context was not mounted');
       }
 
-      // Small delay to let dialog animation finish
-      print('🔧 Waiting 200ms before preview...');
       await Future.delayed(const Duration(milliseconds: 200));
 
-      // Printing.layoutPdf doesn't need context - it uses native PDF viewer!
-      print('👁️ Calling Printing.layoutPdf (no context needed)...');
+      // Open PDF preview
+      print('👁️ Opening PDF preview...');
       try {
         await Printing.layoutPdf(
           onLayout: (PdfPageFormat format) async => pdfBytes,
         );
-        print('✅ PDF preview opened and closed successfully');
+        print('✅ PDF preview opened successfully');
 
-        // Show success message if context is available
         if (context.mounted) {
           _showSuccess(context, 'PDF saved successfully!');
         }
@@ -123,7 +116,7 @@ class ExportController{
     }
   }
 
-  /// Share trip itinerary as PDF
+  /// Shares trip as PDF file
   Future<void> sharePdfItinerary(String tripId, BuildContext context) async {
     if (!context.mounted) return;
 
@@ -151,67 +144,41 @@ class ExportController{
     try {
       await Future.delayed(const Duration(milliseconds: 100));
 
+      // Fetch data and generate PDF
       print('📤 Fetching trip data for sharing...');
       final trip = await _fetchTripData(tripId);
-      print('✅ Trip data fetched: ${trip.tripName}');
-
       final itinerarySnapshot = await _fetchItineraryItems(tripId);
-      print('✅ Found ${itinerarySnapshot.docs.length} itinerary items');
-
       final accommodationDoc = await _fetchAccommodation(tripId);
-      print('✅ Accommodation doc exists: ${accommodationDoc?.exists ?? false}');
 
       print('📄 Generating PDF for sharing...');
       final pdfBytes = await _generatePdfBytes(
         trip,
         itinerarySnapshot.docs,
         accommodationDoc,
-      ).timeout(
-        const Duration(seconds: 45),
-        onTimeout: () {
-          print('⏱️ PDF generation timed out!');
-          throw TimeoutException('PDF generation took too long');
-        },
-      );
-      print('✅ PDF generated: ${pdfBytes.length} bytes');
+      ).timeout(const Duration(seconds: 45));
 
+      // Save to temp file
       final fileName = '${trip.tripName.replaceAll(' ', '_')}_Itinerary.pdf';
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/$fileName');
       await file.writeAsBytes(pdfBytes);
       print('✅ PDF file written to: ${file.path}');
 
-      print('🔧 Checking if context is still mounted...');
-      print('🔧 Context mounted: ${context.mounted}');
-
-      // Close dialog if context still exists
-      print('🔧 Closing dialog...');
+      // Close dialog
       final ctx = dialogContext;
       if (ctx != null && ctx.mounted) {
         Navigator.of(ctx).pop();
-        print('🔧 Dialog closed');
-      } else {
-        print('⚠️ Dialog context was not mounted');
       }
 
-      // Small delay to let dialog animation finish
-      print('🔧 Waiting 200ms before share...');
       await Future.delayed(const Duration(milliseconds: 200));
 
-      // Share doesn't need context - it uses native system dialog!
-      print('📤 Calling Share.shareXFiles (no context needed)...');
-      try {
-        final result = await Share.shareXFiles(
-          [XFile(file.path)],
-          subject: '${trip.tripName} - Travel Itinerary',
-          text: 'Check out my ${trip.tripName} travel itinerary!',
-        );
-        print('✅ Share dialog opened successfully');
-        print('Result: $result');
-      } catch (e, stackTrace) {
-        print('❌ Share error: $e');
-        print('Stack trace: $stackTrace');
-      }
+      // Share file
+      print('📤 Opening share dialog...');
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: '${trip.tripName} - Travel Itinerary',
+        text: 'Check out my ${trip.tripName} travel itinerary!',
+      );
     } catch (e) {
       print('❌ Error during PDF sharing: $e');
       final ctx = dialogContext;
@@ -225,7 +192,7 @@ class ExportController{
     }
   }
 
-  /// Share trip itinerary as text
+  /// Shares trip as plain text
   Future<void> shareTextItinerary(String tripId, BuildContext context) async {
     if (!context.mounted) return;
 
@@ -253,16 +220,13 @@ class ExportController{
     try {
       await Future.delayed(const Duration(milliseconds: 100));
 
+      // Fetch data
       print('📝 Fetching trip data for text export...');
       final trip = await _fetchTripData(tripId);
-      print('✅ Trip data fetched: ${trip.tripName}, Duration: ${trip.durationInDays} days');
-
       final itinerarySnapshot = await _fetchItineraryItems(tripId);
-      print('✅ Found ${itinerarySnapshot.docs.length} itinerary items');
-
       final accommodationDoc = await _fetchAccommodation(tripId);
-      print('✅ Accommodation doc exists: ${accommodationDoc?.exists ?? false}');
 
+      // Build text content
       print('📝 Building text content...');
       final textContent = _buildTextContent(
         trip,
@@ -271,36 +235,20 @@ class ExportController{
       );
       print('✅ Text content generated: ${textContent.length} characters');
 
-      print('🔧 Checking context before closing dialog...');
-      print('🔧 Context mounted: ${context.mounted}');
-
-      // Close dialog if possible
-      print('🔧 Closing dialog...');
+      // Close dialog
       final ctx = dialogContext;
       if (ctx != null && ctx.mounted) {
         Navigator.of(ctx).pop();
-        print('🔧 Dialog closed');
-      } else {
-        print('⚠️ Dialog context was not mounted');
       }
 
-      // Small delay to let dialog animation finish
-      print('🔧 Waiting 200ms before text share...');
       await Future.delayed(const Duration(milliseconds: 200));
 
-      // Share doesn't need context - it uses native system dialog!
-      print('📤 Calling Share.share (no context needed)...');
-      try {
-        final result = await Share.share(
-          textContent,
-          subject: '${trip.tripName} - Travel Itinerary',
-        );
-        print('✅ Share dialog opened successfully');
-        print('Result: $result');
-      } catch (e, stackTrace) {
-        print('❌ Share error: $e');
-        print('Stack trace: $stackTrace');
-      }
+      // Share text
+      print('📤 Opening share dialog...');
+      await Share.share(
+        textContent,
+        subject: '${trip.tripName} - Travel Itinerary',
+      );
     } catch (e) {
       print('❌ Error during text sharing: $e');
       final ctx = dialogContext;
@@ -314,14 +262,14 @@ class ExportController{
     }
   }
 
-  // ==================== DATA FETCHING ====================
-
+  /// Fetches trip document from Firestore
   Future<TripModel> _fetchTripData(String tripId) async {
     final tripDoc = await _firestore.collection('trip').doc(tripId).get();
     if (!tripDoc.exists) throw Exception('Trip not found');
     return TripModel.fromFirestore(tripDoc);
   }
 
+  /// Fetches itinerary items sorted by day and order
   Future<QuerySnapshot> _fetchItineraryItems(String tripId) {
     return _firestore
         .collection('itineraryItem')
@@ -331,34 +279,33 @@ class ExportController{
         .get();
   }
 
+  /// Fetches accommodation document
   Future<DocumentSnapshot?> _fetchAccommodation(String tripId) async {
     final doc = await _firestore.collection('accommodation').doc(tripId).get();
     return doc.exists ? doc : null;
   }
 
-  // ==================== LIGHTWEIGHT PDF GENERATION ====================
-
+  /// Generates PDF bytes from trip data
   Future<Uint8List> _generatePdfBytes(
       TripModel trip,
       List<QueryDocumentSnapshot> itineraryDocs,
       DocumentSnapshot? accommodationDoc,
       ) async {
-    print('🔧 Starting LIGHTWEIGHT PDF generation...');
-    print('🔧 Items to process: ${itineraryDocs.length} itinerary, accommodation exists: ${accommodationDoc?.exists ?? false}');
+    print('🔧 Starting PDF generation...');
 
     try {
       final pdf = pw.Document();
 
-      print('🔧 Loading compact font...');
-      // Use single lightweight font
+      // Load font
+      print('🔧 Loading font...');
       final font = await PdfGoogleFonts.notoSansSCRegular();
-      print('🔧 Font loaded: ${font.fontName}');
 
-      // Simple colors
+      // Define colors
       final primaryColor = PdfColor.fromHex('#1E88E5');
       final accentColor = PdfColor.fromHex('#FF6F00');
       final successColor = PdfColor.fromHex('#43A047');
 
+      // Build PDF pages
       print('🔧 Building pages...');
       pdf.addPage(
         pw.MultiPage(
@@ -368,15 +315,15 @@ class ExportController{
             print('🔧 Building content...');
             final widgets = <pw.Widget>[];
 
-            // Header
+            // Header section
             widgets.add(_buildCompactHeader(trip, primaryColor, font));
             widgets.add(pw.SizedBox(height: 16));
 
-            // Overview
+            // Overview section
             widgets.add(_buildCompactOverview(trip, primaryColor, accentColor, successColor, font));
             widgets.add(pw.SizedBox(height: 16));
 
-            // Accommodations
+            // Accommodations section
             if (accommodationDoc != null && accommodationDoc.exists) {
               widgets.add(_buildSectionTitle('Accommodations', font, primaryColor));
               widgets.add(pw.SizedBox(height: 8));
@@ -384,13 +331,14 @@ class ExportController{
               widgets.add(pw.SizedBox(height: 16));
             }
 
-            // Itinerary
+            // Itinerary section
             if (itineraryDocs.isNotEmpty) {
               widgets.add(_buildSectionTitle('Daily Itinerary', font, primaryColor));
               widgets.add(pw.SizedBox(height: 8));
               widgets.addAll(_buildCompactItinerary(itineraryDocs, trip.startDate, font, primaryColor, accentColor, successColor, accommodationDoc));
             }
 
+            // Footer
             widgets.add(pw.SizedBox(height: 16));
             widgets.add(_buildFooter(font, primaryColor));
 
@@ -400,9 +348,9 @@ class ExportController{
         ),
       );
 
-      print('🔧 Calling pdf.save()...');
+      print('🔧 Saving PDF...');
       final bytes = await pdf.save();
-      print('✅ PDF saved successfully: ${bytes.length} bytes');
+      print('✅ PDF saved: ${bytes.length} bytes');
       return bytes;
 
     } catch (e, stackTrace) {
@@ -412,8 +360,7 @@ class ExportController{
     }
   }
 
-  // ==================== COMPACT PDF COMPONENTS ====================
-
+  /// Builds PDF header with trip name
   pw.Widget _buildCompactHeader(TripModel trip, PdfColor color, pw.Font font) {
     return pw.Container(
       decoration: pw.BoxDecoration(color: color, borderRadius: pw.BorderRadius.circular(8)),
@@ -431,6 +378,7 @@ class ExportController{
     );
   }
 
+  /// Builds overview section with dates and budget
   pw.Widget _buildCompactOverview(TripModel trip, PdfColor primaryColor, PdfColor accentColor, PdfColor successColor, pw.Font font) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
@@ -448,6 +396,7 @@ class ExportController{
     );
   }
 
+  /// Builds single stat item
   pw.Widget _buildCompactStat(String label, String value, PdfColor color, pw.Font font) {
     return pw.Column(
       children: [
@@ -458,6 +407,7 @@ class ExportController{
     );
   }
 
+  /// Builds section title
   pw.Widget _buildSectionTitle(String title, pw.Font font, PdfColor color) {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 10),
@@ -469,6 +419,7 @@ class ExportController{
     );
   }
 
+  /// Builds accommodations section
   List<pw.Widget> _buildCompactAccommodations(DocumentSnapshot doc, pw.Font font, PdfColor primaryColor, PdfColor successColor) {
     final data = doc.data() as Map<String, dynamic>?;
     if (data == null) return [];
@@ -523,6 +474,7 @@ class ExportController{
     return widgets;
   }
 
+  /// Builds daily itinerary section
   List<pw.Widget> _buildCompactItinerary(
       List<QueryDocumentSnapshot> docs,
       DateTime startDate,
@@ -537,28 +489,20 @@ class ExportController{
     final sortedDays = itemsByDay.keys.toList()..sort();
     final widgets = <pw.Widget>[];
 
-    // Get recommended accommodation for "Start from Hotel" card
+    // Get accommodation for "Start from Hotel" card
     Map<String, dynamic>? recommendedAccommodation;
     if (accommodationDoc != null && accommodationDoc.exists) {
-      print('🔧 Processing accommodation doc');
       final accData = accommodationDoc.data() as Map<String, dynamic>?;
       if (accData != null) {
-        print('🔧 Accommodation data keys: ${accData.keys.toList()}');
-
         if (accData['recommendedAccommodation'] != null) {
           recommendedAccommodation = accData['recommendedAccommodation'] as Map<String, dynamic>;
-          print('🔧 Using recommendedAccommodation: ${recommendedAccommodation['name']}');
         } else if (accData['accommodations'] != null && (accData['accommodations'] as List).isNotEmpty) {
           recommendedAccommodation = (accData['accommodations'] as List).first as Map<String, dynamic>;
-          print('🔧 Using first accommodation from list: ${recommendedAccommodation['name']}');
-        } else {
-          print('⚠️ No accommodation data found in expected structure');
         }
       }
-    } else {
-      print('⚠️ No accommodation doc available');
     }
 
+    // Build each day
     for (var dayNumber in sortedDays) {
       final date = startDate.add(Duration(days: dayNumber - 1));
       final dayItems = itemsByDay[dayNumber]!;
@@ -592,7 +536,7 @@ class ExportController{
         ),
       );
 
-      // Add accommodation card at start of Day 1 (like in the UI)
+      // Add "Start from Hotel" card
       if (recommendedAccommodation != null) {
         widgets.add(
           pw.Container(
@@ -643,7 +587,7 @@ class ExportController{
         );
       }
 
-      // Activities
+      // Add activities for this day
       for (var item in dayItems) {
         final activityColor = _getActivityColor(item);
         final title = item['title'] ?? 'Activity';
@@ -679,7 +623,7 @@ class ExportController{
                   pw.SizedBox(height: 2),
                   pw.Text(location, style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey600), maxLines: 1),
                 ],
-                // Show restaurant with clear white background and black text
+                // Show restaurant options for meals
                 if (_isMealCategory(item['category']?.toString().toLowerCase() ?? '')) ...[
                   pw.SizedBox(height: 3),
                   _buildRestaurantOption(item, font),
@@ -695,7 +639,7 @@ class ExportController{
     return widgets;
   }
 
-  // Restaurant option with white background and black text
+  /// Builds restaurant option display
   pw.Widget _buildRestaurantOption(Map<String, dynamic> item, pw.Font font) {
     final restaurants = item['restaurantOptions'] as List? ?? [];
     if (restaurants.isEmpty) return pw.SizedBox.shrink();
@@ -719,6 +663,7 @@ class ExportController{
     );
   }
 
+  /// Builds PDF footer
   pw.Widget _buildFooter(pw.Font font, PdfColor primaryColor) {
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -729,14 +674,17 @@ class ExportController{
     );
   }
 
-  // ==================== TEXT EXPORT ====================
-
+  /// Builds text content for sharing
   String _buildTextContent(TripModel trip, List<QueryDocumentSnapshot> itineraryDocs, DocumentSnapshot? accommodationDoc) {
     final buffer = StringBuffer();
+
+    // Header
     buffer.writeln('=' * 70);
     buffer.writeln(trip.tripName.toUpperCase().padLeft(35 + trip.tripName.length ~/ 2));
     buffer.writeln('=' * 70);
     buffer.writeln();
+
+    // Trip details
     buffer.writeln('TRIP DETAILS');
     buffer.writeln('-' * 70);
     buffer.writeln('Destination: ${trip.destinationCity}, ${trip.destinationCountry}');
@@ -747,6 +695,7 @@ class ExportController{
     }
     buffer.writeln();
 
+    // Accommodation
     if (accommodationDoc != null && accommodationDoc.exists) {
       final data = accommodationDoc.data() as Map<String, dynamic>?;
       if (data != null) {
@@ -768,6 +717,7 @@ class ExportController{
       }
     }
 
+    // Daily itinerary
     if (itineraryDocs.isNotEmpty) {
       buffer.writeln('DAILY ITINERARY');
       buffer.writeln('=' * 70);
@@ -786,6 +736,7 @@ class ExportController{
           if (item['location'] != null) buffer.writeln('  Location: ${item['location']}');
           if (item['description'] != null && item['description'].toString().isNotEmpty) buffer.writeln('  Notes: ${item['description']}');
 
+          // Restaurant options
           final restaurants = item['restaurantOptions'] as List? ?? [];
           final validRestaurants = restaurants.where((r) {
             final name = ((r as Map<String, dynamic>)['name']?.toString() ?? '').trim();
@@ -810,14 +761,14 @@ class ExportController{
       }
     }
 
+    // Footer
     buffer.writeln('=' * 70);
     buffer.writeln('Generated on ${DateFormat('MMM d, y').format(DateTime.now())}');
     buffer.writeln('Created with Wandry Trip Planner');
     return buffer.toString();
   }
 
-  // ==================== HELPERS ====================
-
+  /// Groups itinerary items by day number
   Map<int, List<Map<String, dynamic>>> _groupItemsByDay(List<QueryDocumentSnapshot> docs) {
     final itemsByDay = <int, List<Map<String, dynamic>>>{};
     for (var doc in docs) {
@@ -829,6 +780,7 @@ class ExportController{
     return itemsByDay;
   }
 
+  /// Returns color based on activity category
   PdfColor _getActivityColor(Map<String, dynamic> item) {
     final category = item['category']?.toString().toLowerCase() ?? '';
     if (_isMealCategory(category)) return PdfColor.fromHex('#FF6F00');
@@ -836,6 +788,7 @@ class ExportController{
     return PdfColor.fromHex('#43A047');
   }
 
+  /// Formats time range from item data
   String _formatTimeRange(Map<String, dynamic> item) {
     try {
       DateTime? startTime;
@@ -855,10 +808,12 @@ class ExportController{
     return '';
   }
 
+  // Category checkers
   bool _isMealCategory(String c) => ['breakfast', 'lunch', 'dinner', 'meal', 'food', 'dining'].contains(c);
   bool _isAttractionCategory(String c) => ['attraction', 'museum', 'park', 'temple', 'landmark', 'monument', 'cultural', 'nature', 'beach'].contains(c);
   bool _isEntertainmentCategory(String c) => ['entertainment', 'shopping', 'nightlife', 'activity', 'sports', 'recreation'].contains(c);
 
+  /// Shows success snackbar
   void _showSuccess(BuildContext context, String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -876,6 +831,7 @@ class ExportController{
     );
   }
 
+  /// Shows error snackbar
   void _showError(BuildContext context, String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

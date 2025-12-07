@@ -1,6 +1,3 @@
-// ============================================
-// FEEDBACK CONTROLLER
-// ============================================
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../model/feedback_model.dart';
@@ -57,7 +54,6 @@ class FeedbackController {
   }
 
   // Get all feedback for current user
-  // Get all feedback for current user
   Stream<List<FeedbackModel>> getUserFeedback() {
     final userEmail = getCurrentUserEmail();
     if (userEmail == null) {
@@ -67,7 +63,7 @@ class FeedbackController {
     return _firestore
         .collection('feedback')
         .where('userEmail', isEqualTo: userEmail)
-        .limit(50)  // ADD THIS LINE - Required by security rules
+        .limit(50)
         .snapshots()
         .map((snapshot) {
       // Sort in memory instead of in query to avoid index requirement
@@ -195,7 +191,7 @@ class FeedbackController {
     }
   }
 
-  // Get average rating for the application (optional - for analytics)
+  // Get average rating for the application
   Future<double> getAverageRating() async {
     try {
       final snapshot = await _firestore.collection('feedback').get();
@@ -212,7 +208,7 @@ class FeedbackController {
     }
   }
 
-  // Get total feedback count (optional - for analytics)
+  // Get total feedback count
   Future<int> getTotalFeedbackCount() async {
     try {
       final snapshot = await _firestore.collection('feedback').get();

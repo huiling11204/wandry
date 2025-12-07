@@ -1,9 +1,3 @@
-// lib/pages/trip_detail_page.dart
-// UPDATED: Replaced Resources tab with Trip Essentials, replaced ML Insights with Explore & Insights
-// Trip Essentials and Explore tabs are customized based on destination
-// UPDATED: Changed all SnackBars and AlertDialogs to SweetAlert dialogs
-// UPDATED: Changed 3-dot popup menu to SweetAlert-style bottom sheet
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';

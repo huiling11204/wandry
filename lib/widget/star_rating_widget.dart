@@ -1,6 +1,3 @@
-// ============================================
-// STAR RATING WIDGET
-// ============================================
 import 'package:flutter/material.dart';
 
 class StarRating extends StatelessWidget {

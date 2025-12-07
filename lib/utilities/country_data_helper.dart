@@ -1,6 +1,4 @@
-// lib/utilities/country_data_helper.dart
 // Provides country-specific data for Trip Essentials
-// All data is FREE - no API needed, static data
 
 class CountryDataHelper {
   /// Get all essential data for a country

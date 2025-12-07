@@ -1,6 +1,3 @@
-// ============================================
-// FEEDBACK MODEL
-// ============================================
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class FeedbackModel {

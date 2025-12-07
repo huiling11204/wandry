@@ -2,11 +2,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
+/// Handles user authentication: login, register, profile management
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // Get current logged in user
   User? get currentUser => _auth.currentUser;
+
+  // Stream that notifies when auth state changes
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   // ==========================================
@@ -14,18 +18,22 @@ class AuthService {
   // ==========================================
   Future<String> _getNextUserId(String role) async {
     try {
+      // C for Customer, A for Admin
       String prefix = role == 'Customer' ? 'C' : 'A';
       String dateStr = DateFormat('yyyyMMdd').format(DateTime.now());
 
       print('🔧 Generating UserID: $prefix$dateStr');
 
+      // Reference to counter document for today
       DocumentReference counterRef = _firestore
           .collection('counters')
           .doc('userCounter_$dateStr'); // One counter per day
 
+      // Use transaction to safely increment counter
       return await _firestore.runTransaction<String>((transaction) async {
         DocumentSnapshot counterSnapshot = await transaction.get(counterRef);
 
+        // Get current count or start at 0
         int currentCount = 0;
         if (counterSnapshot.exists) {
           Map<String, dynamic>? data = counterSnapshot.data() as Map<String, dynamic>?;
@@ -34,6 +42,7 @@ class AuthService {
           }
         }
 
+        // Increment and format as 4-digit number
         int newCount = currentCount + 1;
         String sequenceStr = newCount.toString().padLeft(4, '0');
         String newID = '$prefix$dateStr$sequenceStr';
@@ -53,7 +62,7 @@ class AuthService {
     } catch (e) {
       print('❌ CRITICAL ERROR generating UserID: $e');
       print('❌ Error details: ${e.toString()}');
-      rethrow; // Don't use fallback - let registration fail properly
+      rethrow;
     }
   }
 
@@ -62,6 +71,7 @@ class AuthService {
   // ==========================================
   Future<String> _getNextProfileId(String role) async {
     try {
+      // CP for Customer Profile, AP for Admin Profile
       String prefix = role == 'Customer' ? 'CP' : 'AP';
       String dateStr = DateFormat('yyyyMMdd').format(DateTime.now());
 
@@ -71,6 +81,7 @@ class AuthService {
           .collection('counters')
           .doc('profileCounter_$dateStr'); // One counter per day
 
+      // Use transaction to safely increment counter
       return await _firestore.runTransaction<String>((transaction) async {
         DocumentSnapshot counterSnapshot = await transaction.get(counterRef);
 
@@ -122,6 +133,7 @@ class AuthService {
       if (result.user != null) {
         print('🔍 Looking for user profile with firebaseUid: ${result.user!.uid}');
 
+        // Check if user has a profile in Firestore
         QuerySnapshot userQuery = await _firestore
             .collection('user')
             .where('firebaseUid', isEqualTo: result.user!.uid)
@@ -130,6 +142,7 @@ class AuthService {
 
         print('📊 Query returned ${userQuery.docs.length} documents');
 
+        // No profile = invalid user
         if (userQuery.docs.isEmpty) {
           print('❌ No user profile found in Firestore');
           await _auth.signOut();
@@ -138,6 +151,10 @@ class AuthService {
 
         print('✅ User profile found: ${userQuery.docs.first.id}');
 
+        // CRITICAL FIX: Check if email was verified and needs syncing
+        await _syncEmailIfVerified(result.user!.uid);
+
+        // Update last login timestamp
         await _firestore
             .collection('user')
             .doc(userQuery.docs.first.id)
@@ -158,6 +175,46 @@ class AuthService {
 
       if (e is String) rethrow;
       throw 'An unexpected error occurred. Please try again.';
+    }
+  }
+
+// Add this helper method to your AuthService class:
+  Future<void> _syncEmailIfVerified(String firebaseUid) async {
+    try {
+      // Reload user to get latest data
+      await _auth.currentUser?.reload();
+      User? refreshedUser = _auth.currentUser;
+
+      if (refreshedUser == null || refreshedUser.email == null) return;
+
+      String authEmail = refreshedUser.email!;
+      print('📧 Auth email: $authEmail');
+
+      // Get Firestore email
+      QuerySnapshot userQuery = await _firestore
+          .collection('user')
+          .where('firebaseUid', isEqualTo: firebaseUid)
+          .limit(1)
+          .get();
+
+      if (userQuery.docs.isEmpty) return;
+
+      Map<String, dynamic> userData = userQuery.docs.first.data() as Map<String, dynamic>;
+      String firestoreEmail = userData['email'] ?? '';
+
+      // If different, sync it
+      if (firestoreEmail != authEmail && authEmail.isNotEmpty) {
+        print('🔄 Syncing verified email to Firestore: $firestoreEmail → $authEmail');
+
+        await userQuery.docs.first.reference.update({
+          'email': authEmail,
+        });
+
+        print('✅ Email synced on login');
+      }
+    } catch (e) {
+      print('⚠️ Error syncing email on login: $e');
+      // Don't throw - email sync failure shouldn't block login
     }
   }
 
@@ -202,7 +259,7 @@ class AuthService {
             'userID': userID,
             'firebaseUid': result.user!.uid,
             'email': email.trim(),
-            'role': 'Customer', // HARDCODED - Only customers can register
+            'role': 'Customer', // Only customers can register
             'registrationDate': FieldValue.serverTimestamp(),
             'lastLoginDate': FieldValue.serverTimestamp(),
           };
@@ -218,7 +275,7 @@ class AuthService {
             contact: contact,
           );
 
-          // Step 5: Update display name
+          // Step 5: Set display name in Firebase Auth
           print('🏷️ Updating display name...');
           await result.user!.updateDisplayName(name);
           print('✅ Display name updated');
@@ -233,6 +290,7 @@ class AuthService {
           return result;
 
         } catch (firestoreError) {
+          // If Firestore fails, delete the Firebase Auth user to keep data clean
           print('❌ Firestore error: $firestoreError');
           print('🧹 Cleaning up Firebase Auth user...');
 
@@ -274,6 +332,7 @@ class AuthService {
   }) async {
     print('👤 Creating customer profile...');
 
+    // Split full name into first and last name
     List<String> nameParts = name.trim().split(' ');
     String firstName = nameParts.first;
     String lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
@@ -281,8 +340,10 @@ class AuthService {
     print('📝 First name: $firstName');
     print('📝 Last name: $lastName');
 
+    // Generate profile ID
     String custProfileID = await _getNextProfileId('Customer');
 
+    // Create profile data
     Map<String, dynamic> customerData = {
       'custProfileID': custProfileID,
       'userID': userID,
@@ -292,46 +353,18 @@ class AuthService {
       'phoneNumber': contact.trim(),
     };
 
+    // Save to Firestore
     print('💾 Saving customer profile to customerProfile/$custProfileID');
     await _firestore.collection('customerProfile').doc(custProfileID).set(customerData);
     print('✅ Customer profile created with ID: $custProfileID');
   }
 
-  // ==========================================
-  // NOTE: Admin Profile Creation is DISABLED
-  // Admins must be manually created in Firebase Console
-  // ==========================================
-  // If you need to manually create an admin via console, use this structure:
-  //
-  // 1. Create Firebase Auth user manually
-  // 2. In Firestore, create documents:
-  //
-  //    user/{adminUserID}:
-  //    {
-  //      userID: "A20251122XXXX",
-  //      firebaseUid: "{firebase_uid}",
-  //      email: "admin@example.com",
-  //      role: "Admin",
-  //      registrationDate: {timestamp},
-  //      lastLoginDate: {timestamp}
-  //    }
-  //
-  //    adminProfile/{adminProfileID}:
-  //    {
-  //      adminProfileID: "AP20251122XXXX",
-  //      userID: "A20251122XXXX",
-  //      firebaseUid: "{firebase_uid}",
-  //      adminName: "Admin Name"
-  //    }
-  // ==========================================
-
-  // ==========================================
-  // Get User Profile (Works for both Customer and Admin)
-  // ==========================================
+  /// Gets user profile data including role-specific profile
   Future<Map<String, dynamic>?> getUserProfile(String firebaseUid) async {
     try {
       print('🔍 Getting user profile for firebaseUid: $firebaseUid');
 
+      // Find user document by Firebase UID
       QuerySnapshot userQuery = await _firestore
           .collection('user')
           .where('firebaseUid', isEqualTo: firebaseUid)
@@ -400,6 +433,7 @@ class AuthService {
       Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
       String role = userData['role'];
 
+      // Get role-specific profile
       if (role == 'Customer') {
         QuerySnapshot profileQuery = await _firestore
             .collection('customerProfile')
@@ -454,13 +488,16 @@ class AuthService {
         throw 'Customer profile not found.';
       }
 
+      // Build update data with only non-null fields
       Map<String, dynamic> updateData = {};
       if (firstName != null) updateData['firstName'] = firstName.trim();
       if (lastName != null) updateData['lastName'] = lastName.trim();
       if (phoneNumber != null) updateData['phoneNumber'] = phoneNumber.trim();
 
+      // Update Firestore
       await profileQuery.docs.first.reference.update(updateData);
 
+      // Update Firebase Auth display name
       if (firstName != null && currentUser != null) {
         String fullName = lastName != null ? '$firstName $lastName' : firstName;
         await currentUser!.updateDisplayName(fullName);
@@ -513,7 +550,7 @@ class AuthService {
   }
 
   // ==========================================
-  // Reset Password
+  // /// Sends password reset email
   // ==========================================
   Future<void> sendPasswordResetEmail(String email) async {
     try {
@@ -526,13 +563,14 @@ class AuthService {
   }
 
   // ==========================================
-  // Delete Account
+  // Delete current user account and all related data
   // ==========================================
   Future<void> deleteAccount() async {
     try {
       if (currentUser != null) {
         String firebaseUid = currentUser!.uid;
 
+        // Find user document
         QuerySnapshot userQuery = await _firestore
             .collection('user')
             .where('firebaseUid', isEqualTo: firebaseUid)
@@ -544,6 +582,7 @@ class AuthService {
           Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
           String role = userData['role'];
 
+          // Delete role-specific profile
           if (role == 'Customer') {
             QuerySnapshot profileQuery = await _firestore
                 .collection('customerProfile')
@@ -565,10 +604,10 @@ class AuthService {
               await profileQuery.docs.first.reference.delete();
             }
           }
-
+          // Delete user document
           await userDoc.reference.delete();
         }
-
+        // Delete Firebase Auth account
         await currentUser!.delete();
       }
     } catch (e) {

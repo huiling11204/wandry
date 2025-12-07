@@ -3,8 +3,7 @@ import '../../controller/legal_document_controller.dart';
 import '../../model/legal_document_model.dart';
 import '../../widget/sweet_alert_dialog.dart';
 
-/// LegalDocumentEditorPage - Admin page to edit Terms & Privacy Policy
-/// Place this in lib/screen/admin/legal_document_editor_page.dart
+/// Admin page to edit Terms & Privacy Policy
 
 enum LegalDocumentType { termsAndConditions, privacyPolicy }
 

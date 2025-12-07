@@ -1,6 +1,3 @@
-// ============================================
-// FEEDBACK PAGE (Main View)
-// ============================================
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/feedback_controller.dart';
 import 'package:wandry/model/feedback_model.dart';
@@ -9,6 +6,7 @@ import 'package:wandry/widget/sweet_alert_dialog.dart';
 import 'submit_feedback_page.dart';
 import 'edit_feedback_page.dart';
 
+// Main page displaying user's feedback history
 class FeedbackPage extends StatefulWidget {
   const FeedbackPage({super.key});
 
@@ -48,6 +46,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
       body: StreamBuilder<List<FeedbackModel>>(
         stream: _controller.getUserFeedback(),
         builder: (context, snapshot) {
+          // Show loading indicator while fetching data
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(
               child: Column(
@@ -69,6 +68,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
             );
           }
 
+          // Show error state if data fetch fails
           if (snapshot.hasError) {
             return Center(
               child: Column(
@@ -110,6 +110,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
           final feedbackList = snapshot.data ?? [];
 
+          // Show empty state when no feedback exists
           if (feedbackList.isEmpty) {
             return Center(
               child: Column(
@@ -195,9 +196,10 @@ class _FeedbackPageState extends State<FeedbackPage> {
             );
           }
 
+          // Display feedback list with stats and action button
           return Column(
             children: [
-              // Stats Card
+              // Statistics card showing total count and average rating
               Container(
                 margin: EdgeInsets.all(16),
                 padding: EdgeInsets.all(20),
@@ -238,6 +240,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 ),
               ),
 
+              // Scrollable list of feedback cards
               Expanded(
                 child: ListView.builder(
                   padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -253,6 +256,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 ),
               ),
 
+              // Fixed bottom button to submit new feedback
               Container(
                 padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -312,6 +316,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
     );
   }
 
+  // Build individual stat item widget for the stats card
   Widget _buildStatItem({
     required IconData icon,
     required String label,
@@ -340,12 +345,14 @@ class _FeedbackPageState extends State<FeedbackPage> {
     );
   }
 
+  // Calculate average rating from feedback list
   String _calculateAverage(List<FeedbackModel> list) {
     if (list.isEmpty) return '0.0';
     final sum = list.fold<int>(0, (prev, feedback) => prev + feedback.rating);
     return (sum / list.length).toStringAsFixed(1);
   }
 
+  // Navigate to submit new feedback page
   void _navigateToSubmitFeedback() {
     Navigator.push(
       context,
@@ -353,7 +360,9 @@ class _FeedbackPageState extends State<FeedbackPage> {
     );
   }
 
+  // Navigate to edit feedback page with validation
   void _navigateToEditFeedback(FeedbackModel feedback) {
+    // Check if feedback can still be edited (within 5-day period)
     if (!feedback.canEdit()) {
       SweetAlertDialog.warning(
         context: context,
@@ -371,6 +380,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
     );
   }
 
+  // Show confirmation dialog before deleting feedback
   Future<void> _confirmDelete(FeedbackModel feedback) async {
     final confirm = await SweetAlertDialog.confirm(
       context: context,
@@ -380,9 +390,11 @@ class _FeedbackPageState extends State<FeedbackPage> {
       cancelText: 'Cancel',
     );
 
+    // Proceed with deletion if confirmed
     if (confirm == true && feedback.id != null) {
       final result = await _controller.deleteFeedback(feedback.id!);
 
+      // Show result notification
       if (mounted) {
         if (result['success']) {
           SweetAlertDialog.success(
@@ -403,7 +415,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
 }
 
 // ============================================
-// ENHANCED FEEDBACK CARD WIDGET
+// Individual feedback card widget with actions
 // ============================================
 class FeedbackCard extends StatelessWidget {
   final FeedbackModel feedback;
@@ -443,10 +455,10 @@ class FeedbackCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header with user info and timestamp
+              // Header: user avatar, email, timestamp, and rating badge
               Row(
                 children: [
-                  // User Avatar
+                  // User avatar with initial
                   Container(
                     width: 44,
                     height: 44,
@@ -540,7 +552,7 @@ class FeedbackCard extends StatelessWidget {
 
               SizedBox(height: 16),
 
-              // Star Rating Display
+              // Star rating display with label
               Row(
                 children: [
                   StarRatingDisplay(rating: feedback.rating, size: 20),
@@ -556,7 +568,7 @@ class FeedbackCard extends StatelessWidget {
                 ],
               ),
 
-              // Comment Section
+              // Comment text if provided
               if (feedback.comment.isNotEmpty) ...[
                 SizedBox(height: 12),
                 Container(
@@ -590,13 +602,13 @@ class FeedbackCard extends StatelessWidget {
                 ),
               ],
 
-              // Status Indicators
+              // Status badges (edited, edit period remaining)
               SizedBox(height: 12),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  // Updated badge
+                  // Show "Edited" badge if feedback was updated
                   if (feedback.updatedAt != null)
                     Container(
                       padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -621,7 +633,7 @@ class FeedbackCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                  // Edit period badge
+                  // Show days remaining to edit if still editable
                   if (canEdit)
                     Container(
                       padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -650,7 +662,7 @@ class FeedbackCard extends StatelessWidget {
                 ],
               ),
 
-              // Action Buttons
+              // Edit and Delete action buttons
               SizedBox(height: 16),
               Container(
                 decoration: BoxDecoration(
@@ -661,6 +673,7 @@ class FeedbackCard extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    // Edit button (only shown if within edit period)
                     if (canEdit)
                       Expanded(
                         child: OutlinedButton.icon(
@@ -678,6 +691,7 @@ class FeedbackCard extends StatelessWidget {
                         ),
                       ),
                     if (canEdit) SizedBox(width: 8),
+                    // Delete button (always shown)
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: onDelete,
@@ -703,10 +717,12 @@ class FeedbackCard extends StatelessWidget {
     );
   }
 
+  // Get first letter of email for avatar
   String _getInitial(String email) {
     return email.isNotEmpty ? email[0].toUpperCase() : '?';
   }
 
+  // Mask email for privacy (e.g., abc***@example.com)
   String _maskEmail(String email) {
     if (email.contains('@')) {
       final parts = email.split('@');
@@ -719,8 +735,9 @@ class FeedbackCard extends StatelessWidget {
     return email;
   }
 
+  // Convert timestamp to relative time (e.g., "2h ago", "3d ago")
   String _getDisplayTime() {
-    // If updated, show updated time, otherwise show created time
+    // Use updated time if available, otherwise use created time
     final displayTime = feedback.updatedAt ?? feedback.createdAt;
     final now = DateTime.now();
     final difference = now.difference(displayTime);
@@ -742,6 +759,7 @@ class FeedbackCard extends StatelessWidget {
     }
   }
 
+  // Convert rating number to descriptive label
   String _getRatingLabel(int rating) {
     switch (rating) {
       case 1:

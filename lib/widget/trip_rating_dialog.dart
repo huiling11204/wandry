@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/interaction_tracker.dart';
 
-/// Beautiful dialog for rating completed trips
-/// Shows after a user marks a trip as completed
 class TripRatingDialog extends StatefulWidget {
   final String tripId;
   final String tripName;

@@ -1,4 +1,4 @@
-/// Utility class for form validation
+/// for form validation
 class Validators {
   // Email validation
   static String? validateEmail(String? value) {

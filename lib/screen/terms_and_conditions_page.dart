@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../model/legal_document_model.dart';
 
-/// TermsAndConditionsPage (Customer Side) - Fetches from Firestore
-/// Place this in lib/screen/customer/terms_and_conditions_page.dart
 class TermsAndConditionsPage extends StatefulWidget {
   const TermsAndConditionsPage({super.key});
 

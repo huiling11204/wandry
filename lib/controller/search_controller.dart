@@ -1,5 +1,3 @@
-// lib/controller/search_controller.dart
-
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 

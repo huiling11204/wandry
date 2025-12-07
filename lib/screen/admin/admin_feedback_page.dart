@@ -5,8 +5,6 @@ import '../../controller/admin_service.dart';
 import '../../controller/theme_controller.dart';
 import '../../widget/sweet_alert_dialog.dart';
 
-/// AdminFeedbackPage - Feedback management screen (FIXED OVERFLOW)
-/// Place this in lib/screen/admin/admin_feedback_page.dart
 class AdminFeedbackPage extends StatefulWidget {
   const AdminFeedbackPage({super.key});
 

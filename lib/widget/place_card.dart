@@ -1,18 +1,19 @@
-// lib/widget/place_card.dart
-
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../controller/place_image_controller.dart';
 import '../utilities/icon_helper.dart';
+import 'favorite_button.dart';
 
 class PlaceCard extends StatefulWidget {
   final Map<String, dynamic> place;
   final VoidCallback onTap;
+  final bool showFavoriteButton; // Option to hide favorite button if needed
 
   const PlaceCard({
     super.key,
     required this.place,
     required this.onTap,
+    this.showFavoriteButton = true,
   });
 
   @override
@@ -152,7 +153,7 @@ class _PlaceCardState extends State<PlaceCard> {
                       ),
                     ),
 
-                    // Type badge
+                    // Type badge (top left)
                     Positioned(
                       top: 6,
                       left: 6,
@@ -184,31 +185,43 @@ class _PlaceCardState extends State<PlaceCard> {
                       ),
                     ),
 
-                    // Directions button
+                    // Top right buttons row (Favorite + Directions)
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: GestureDetector(
-                        onTap: _openDirections,
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[600],
-                            borderRadius: BorderRadius.circular(6),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Favorite button
+                          if (widget.showFavoriteButton)
+                            FavoriteCardButton(place: widget.place),
+
+                          const SizedBox(width: 4),
+
+                          // Directions button
+                          GestureDetector(
+                            onTap: _openDirections,
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.blue[600],
+                                borderRadius: BorderRadius.circular(6),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                            ],
+                              child: const Icon(
+                                Icons.directions,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.directions,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                        ),
+                        ],
                       ),
                     ),
                   ],

@@ -1,4 +1,3 @@
-// lib/widget/category_icon.dart
 import 'package:flutter/material.dart';
 
 class CategoryIcon extends StatelessWidget {

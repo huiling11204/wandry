@@ -1,6 +1,3 @@
-// lib/model/itinerary_item_model.dart
-// COMPLETE VERSION: Added reorder tracking fields
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ItineraryItemModel {

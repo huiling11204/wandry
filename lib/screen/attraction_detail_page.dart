@@ -1,11 +1,10 @@
-// lib/screen/attraction_detail_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../controller/wikipedia_controller.dart';
 import '../controller/place_image_controller.dart';
 import '../utilities/string_helper.dart';
 import '../widget/detail_row.dart';
+import '../widget/favorite_button.dart';
 
 class AttractionDetailPage extends StatefulWidget {
   final Map<String, dynamic> place;
@@ -116,7 +115,6 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
   Future<void> _openDirections() async {
     final lat = widget.place['latitude'] ?? widget.place['lat'];
     final lon = widget.place['longitude'] ?? widget.place['lon'];
-    final name = _details?['name'] ?? widget.place['name'] ?? 'Destination';
 
     if (lat == null || lon == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -238,6 +236,17 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
               onPressed: () => Navigator.pop(context),
             ),
             actions: [
+              // SINGLE FAVORITE BUTTON - in app bar only
+              Container(
+                margin: const EdgeInsets.only(right: 4),
+                child: FavoriteButton(
+                  place: widget.place,
+                  size: 22,
+                  showBackground: true,
+                  backgroundColor: Colors.white.withOpacity(0.9),
+                  padding: const EdgeInsets.all(8),
+                ),
+              ),
               // Quick directions button in app bar
               Container(
                 margin: const EdgeInsets.only(right: 8),
@@ -355,18 +364,18 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
                   ],
                   const SizedBox(height: 24),
 
-                  // Action buttons row
+                  // Action buttons row - ONLY Directions and Map (no duplicate favorite)
                   Row(
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: _openDirections,
                           icon: const Icon(Icons.directions, size: 20),
-                          label: const Text('Get Directions'),
+                          label: const Text('Directions'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blue[600],
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -378,11 +387,11 @@ class _AttractionDetailPageState extends State<AttractionDetailPage> {
                         child: OutlinedButton.icon(
                           onPressed: _openOnMap,
                           icon: const Icon(Icons.map, size: 20),
-                          label: const Text('View on Map'),
+                          label: const Text('View Map'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.blue[600],
                             side: BorderSide(color: Colors.blue[600]!),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),

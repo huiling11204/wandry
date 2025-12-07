@@ -1,5 +1,3 @@
-// lib/model/attraction_model.dart
-
 class Attraction {
   final String id;
   final String name;

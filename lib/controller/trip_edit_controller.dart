@@ -1,6 +1,4 @@
-// lib/controller/trip_edit_controller.dart
 // Handles trip-level editing (preferences, dates, destination)
-// 🆕 HALAL PARAMETER REMOVED
 
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';

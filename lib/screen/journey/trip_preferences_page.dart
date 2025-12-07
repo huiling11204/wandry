@@ -1,6 +1,3 @@
-// lib/pages/trip_preferences_page.dart
-// UPDATED: Added destination type selection
-
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/destination_search_controller.dart';
 import 'package:wandry/widget/destination_autocomplete_widget.dart';
@@ -79,9 +76,7 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
       }
     };
 
-    // CHANGED: Don't show snackbar for search errors - too intrusive
     _searchController.onError = (error) {
-      // Just log it, don't show snackbar for autocomplete failures
       print('Search error: $error');
       // User can simply try typing again
     };
@@ -381,14 +376,6 @@ class _TripPreferencesPageState extends State<TripPreferencesPage> {
                       decoration: BoxDecoration(
                         color: const Color(0xFF4A90E2).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'NEW',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF4A90E2),
-                        ),
                       ),
                     ),
                   ],

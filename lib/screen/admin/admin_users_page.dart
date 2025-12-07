@@ -5,8 +5,8 @@ import '../../controller/admin_service.dart';
 import '../../controller/theme_controller.dart';
 import '../../widget/sweet_alert_dialog.dart';
 
-/// AdminUsersPage - Enhanced user management screen (FIXED OVERFLOW)
-/// Place this in lib/screen/admin/admin_users_page.dart
+/// User management screen (VIEW ONLY - No Delete)
+/// Admins can view user information but cannot delete accounts
 class AdminUsersPage extends StatefulWidget {
   const AdminUsersPage({super.key});
 
@@ -67,59 +67,6 @@ class _AdminUsersPageState extends State<AdminUsersPage>
           title: 'Failed to Load',
           subtitle: _adminService.getErrorMessage(e),
         );
-      }
-    }
-  }
-
-  Future<void> _deleteUser(Map<String, dynamic> user) async {
-    final confirm = await SweetAlertDialog.confirm(
-      context: context,
-      title: 'Delete User',
-      subtitle: 'Are you sure you want to delete "${user['email']}"?\n\nThis action cannot be undone.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-    );
-
-    if (confirm == true) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => Center(
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: tc.cardColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const CircularProgressIndicator(),
-          ),
-        ),
-      );
-
-      try {
-        await _adminService.deleteUser(
-          user['docId'],
-          user['firebaseUid'],
-        );
-
-        if (mounted) {
-          Navigator.pop(context);
-          SweetAlertDialog.success(
-            context: context,
-            title: 'User Deleted',
-            subtitle: 'The user has been successfully removed.',
-          );
-          _loadUsers();
-        }
-      } catch (e) {
-        if (mounted) {
-          Navigator.pop(context);
-          SweetAlertDialog.error(
-            context: context,
-            title: 'Delete Failed',
-            subtitle: _adminService.getErrorMessage(e),
-          );
-        }
       }
     }
   }
@@ -192,6 +139,27 @@ class _AdminUsersPageState extends State<AdminUsersPage>
         color: tc.backgroundColor,
         child: Column(
           children: [
+            // Info Banner
+            Container(
+              color: Colors.blue.withOpacity(0.1),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'View-only mode. Customers can delete their own accounts. Contact system admin to manage admin accounts.',
+                      style: TextStyle(
+                        color: Colors.blue[700],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             // Search Bar
             Container(
               color: tc.cardColor,
@@ -431,7 +399,7 @@ class _AdminUsersPageState extends State<AdminUsersPage>
 
                 const SizedBox(height: 12),
 
-                // Bottom Row: User ID, Date, Actions (FIXED OVERFLOW)
+                // Bottom Row: User ID, Date, View Action
                 Row(
                   children: [
                     // User ID
@@ -458,21 +426,13 @@ class _AdminUsersPageState extends State<AdminUsersPage>
 
                     const SizedBox(width: 8),
 
-                    // Action Buttons
+                    // View Button (No Delete)
                     InkWell(
                       onTap: () => _showUserDetails(user),
                       borderRadius: BorderRadius.circular(8),
                       child: Padding(
                         padding: const EdgeInsets.all(6),
                         child: Icon(Icons.visibility_outlined, size: 18, color: Colors.blue[600]),
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () => _deleteUser(user),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(Icons.delete_outline, size: 18, color: Colors.red[600]),
                       ),
                     ),
                   ],
@@ -625,7 +585,7 @@ class _AdminUsersPageState extends State<AdminUsersPage>
               ),
             ),
 
-            // Actions
+            // Close Action Only (No Delete)
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -638,47 +598,19 @@ class _AdminUsersPageState extends State<AdminUsersPage>
                   ),
                 ],
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: tc.textColor,
-                        side: BorderSide(color: tc.borderColor),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text('Close'),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _deleteUser(user);
-                      },
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.delete_outline, size: 18),
-                          SizedBox(width: 8),
-                          Text('Delete'),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                  child: const Text('Close'),
+                ),
               ),
             ),
           ],

@@ -1,12 +1,10 @@
-// ============================================
-// EDIT FEEDBACK PAGE
-// ============================================
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/feedback_controller.dart';
 import 'package:wandry/model/feedback_model.dart';
 import 'package:wandry/widget/star_rating_widget.dart';
 import 'package:wandry/widget/custom_alert_dialog.dart';
 
+// Page for editing existing feedback within the 5-day edit period
 class EditFeedbackPage extends StatefulWidget {
   final FeedbackModel feedback;
 
@@ -25,6 +23,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
   late int _rating;
   bool _isSubmitting = false;
 
+  // Initialize form with existing feedback data
   @override
   void initState() {
     super.initState();
@@ -32,6 +31,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
     _commentController = TextEditingController(text: widget.feedback.comment);
   }
 
+  // Clean up text controller
   @override
   void dispose() {
     _commentController.dispose();
@@ -59,7 +59,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
           padding: EdgeInsets.all(20),
           child: Column(
             children: [
-              // Time Remaining Card
+              // Warning card showing remaining edit time
               Container(
                 padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -127,7 +127,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
 
               SizedBox(height: 16),
 
-              // Original Date
+              // Display original submission date
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
@@ -163,7 +163,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
 
               SizedBox(height: 24),
 
-              // Rating Section
+              // Star rating input section
               Container(
                 padding: EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -202,7 +202,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
                       ],
                     ),
                     SizedBox(height: 18),
-                    // Fixed star rating with proper constraints
+                    // Interactive star rating widget with responsive sizing
                     ConstrainedBox(
                       constraints: BoxConstraints(
                         maxWidth: MediaQuery.of(context).size.width - 80,
@@ -219,6 +219,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
                         ),
                       ),
                     ),
+                    // Display rating label when rating is selected
                     if (_rating > 0) ...[
                       SizedBox(height: 14),
                       Container(
@@ -248,7 +249,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
 
               SizedBox(height: 20),
 
-              // Comment Section
+              // Comment text input section
               Container(
                 padding: EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -321,7 +322,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
 
               SizedBox(height: 32),
 
-              // Update Button
+              // Update button with loading state
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -377,7 +378,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
 
               SizedBox(height: 12),
 
-              // Cancel Button
+              // Cancel button
               OutlinedButton(
                 onPressed: _isSubmitting ? null : () => Navigator.pop(context),
                 style: OutlinedButton.styleFrom(
@@ -404,6 +405,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
     );
   }
 
+  // Convert rating number to descriptive text
   String _getRatingText(int rating) {
     switch (rating) {
       case 1:
@@ -421,6 +423,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
     }
   }
 
+  // Format date to readable format (e.g., "Jan 15, 2024")
   String _formatDate(DateTime date) {
     final months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -429,7 +432,9 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
+  // Handle feedback update submission with validation
   Future<void> _updateFeedback() async {
+    // Validate rating is selected
     if (_rating == 0) {
       await SweetAlert.show(
         context: context,
@@ -440,6 +445,7 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
       return;
     }
 
+    // Check if edit period is still valid
     if (!widget.feedback.canEdit()) {
       await SweetAlert.show(
         context: context,
@@ -451,20 +457,24 @@ class _EditFeedbackPageState extends State<EditFeedbackPage> {
       return;
     }
 
+    // Show loading state
     setState(() {
       _isSubmitting = true;
     });
 
+    // Submit updated feedback to controller
     final result = await _controller.editFeedback(
       feedbackId: widget.feedback.id!,
       rating: _rating,
       comment: _commentController.text,
     );
 
+    // Hide loading state
     setState(() {
       _isSubmitting = false;
     });
 
+    // Show result dialog and navigate back on success
     if (mounted) {
       await SweetAlert.show(
         context: context,

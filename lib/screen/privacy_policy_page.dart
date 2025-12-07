@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../model/legal_document_model.dart';
 
-/// PrivacyPolicyPage (Customer Side) - Fetches from Firestore
-/// Place this in lib/screen/customer/privacy_policy_page.dart
 class PrivacyPolicyPage extends StatefulWidget {
   const PrivacyPolicyPage({super.key});
 

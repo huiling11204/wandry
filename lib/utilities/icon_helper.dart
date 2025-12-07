@@ -1,10 +1,6 @@
-// lib/utilities/icon_helper.dart
 import 'package:flutter/material.dart';
 
 class IconHelper {
-  // ============================================
-  // EXISTING METHODS (for itinerary/categories)
-  // ============================================
 
   /// Get color for itinerary categories
   static Color getCategoryColor(String? category) {
@@ -76,10 +72,6 @@ class IconHelper {
     if (description.contains('snow')) return Icons.ac_unit;
     return Icons.wb_cloudy;
   }
-
-  // ============================================
-  // NEW METHODS (for place types and search)
-  // ============================================
 
   /// Get icon for OpenStreetMap place types (for attraction/search results)
   static IconData getIconForType(String type) {

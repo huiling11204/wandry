@@ -1,4 +1,3 @@
-// lib/widget/data_quality_banner.dart
 // Shows a warning banner when trip has limited data
 
 import 'package:flutter/material.dart';

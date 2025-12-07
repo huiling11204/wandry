@@ -1,6 +1,3 @@
-// lib/model/trip_model.dart
-// UPDATED: Added data quality and warning fields
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TripModel {

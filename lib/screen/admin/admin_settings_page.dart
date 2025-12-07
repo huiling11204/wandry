@@ -6,9 +6,7 @@ import '../../controller/theme_controller.dart';
 import '../../widget/sweet_alert_dialog.dart';
 import 'legal_document_editor_page.dart';
 
-/// AdminSettingsPage - Simplified settings page with SweetAlert
 /// Features: Edit Profile, Dark Mode, Change Password, Legal Documents
-/// Place this in lib/screen/admin/admin_settings_page.dart
 class AdminSettingsPage extends StatefulWidget {
   const AdminSettingsPage({super.key});
 

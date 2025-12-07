@@ -1,5 +1,3 @@
-// lib/screen/explore_page.dart
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -189,7 +187,6 @@ class _ExplorePageState extends State<ExplorePage> with WidgetsBindingObserver {
             Navigator.of(context).pop();
             _startPermissionChecking();
 
-            // Show info dialog instead of SnackBar
             SweetAlertDialog.show(
               context: context,
               type: SweetAlertType.info,

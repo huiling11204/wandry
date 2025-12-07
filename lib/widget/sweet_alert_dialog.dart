@@ -1,6 +1,3 @@
-// lib/widget/sweet_alert_dialog.dart
-// Beautiful SweetAlert-style dialogs for the app
-
 import 'package:flutter/material.dart';
 
 enum SweetAlertType {
@@ -776,7 +773,7 @@ class RouteWarningDialog extends StatelessWidget {
                           ),
                         ),
                         child: Text(
-                          isImprovement ? 'Apply' : 'Reorder Anyway',
+                          isImprovement ? 'Apply' : 'Reorder',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

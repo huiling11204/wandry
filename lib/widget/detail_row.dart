@@ -1,4 +1,3 @@
-// lib/widget/detail_row.dart
 import 'package:flutter/material.dart';
 
 class DetailRow extends StatelessWidget {

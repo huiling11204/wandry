@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../model/legal_document_model.dart';
 
 /// LegalDocumentController - Manages Terms & Conditions and Privacy Policy
-/// Place this in lib/controller/legal_document_controller.dart
 class LegalDocumentController extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 

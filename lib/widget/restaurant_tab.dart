@@ -251,8 +251,8 @@ class _RestaurantTabState extends State<RestaurantTab> with SingleTickerProvider
     );
   }
 
-  /// 🆕 Calculates a flexible price range based on available restaurant options
-  /// Now includes verified vs estimated status
+  /// Calculates a flexible price range based on available restaurant options
+  /// includes verified vs estimated status
   Map<String, dynamic> _calculateDynamicPriceInfo(List options) {
     if (options.isEmpty) {
       return {

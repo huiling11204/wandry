@@ -1,11 +1,9 @@
-// ============================================
-// SUBMIT FEEDBACK PAGE
-// ============================================
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/feedback_controller.dart';
 import 'package:wandry/widget/star_rating_widget.dart';
 import 'package:wandry/widget/custom_alert_dialog.dart';
 
+// Page for submitting new feedback
 class SubmitFeedbackPage extends StatefulWidget {
   const SubmitFeedbackPage({super.key});
 
@@ -19,6 +17,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
   int _rating = 0;
   bool _isSubmitting = false;
 
+  // Clean up text controller when widget is disposed
   @override
   void dispose() {
     _commentController.dispose();
@@ -44,7 +43,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
           padding: EdgeInsets.all(20),
           child: Column(
             children: [
-              // Header Card with gradient
+              // Header card with motivational message
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.all(32),
@@ -96,7 +95,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
 
               SizedBox(height: 24),
 
-              // Rating Section
+              // Star rating input section
               Container(
                 padding: EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -132,7 +131,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
                       ],
                     ),
                     SizedBox(height: 20),
-                    // Fixed star rating with proper constraints
+                    // Interactive star rating widget with responsive sizing
                     FractionallySizedBox(
                       widthFactor: 0.95,
                       child: FittedBox(
@@ -148,6 +147,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
                         ),
                       ),
                     ),
+                    // Display rating label when rating is selected
                     if (_rating > 0) ...[
                       SizedBox(height: 16),
                       Container(
@@ -177,7 +177,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
 
               SizedBox(height: 20),
 
-              // Comment Section
+              // Comment text input section
               Container(
                 padding: EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -247,7 +247,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
 
               SizedBox(height: 20),
 
-              // Info Box
+              // Information box about edit policy
               Container(
                 padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -280,7 +280,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
 
               SizedBox(height: 32),
 
-              // Submit Button
+              // Submit button with loading state
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -339,6 +339,7 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
     );
   }
 
+  // Convert rating number to descriptive text with emoji stars
   String _getRatingText(int rating) {
     switch (rating) {
       case 1:
@@ -356,7 +357,9 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
     }
   }
 
+  // Handle feedback submission with validation
   Future<void> _submitFeedback() async {
+    // Validate that rating is selected before submitting
     if (_rating == 0) {
       await SweetAlert.show(
         context: context,
@@ -367,19 +370,23 @@ class _SubmitFeedbackPageState extends State<SubmitFeedbackPage> {
       return;
     }
 
+    // Show loading state
     setState(() {
       _isSubmitting = true;
     });
 
+    // Submit feedback to controller
     final result = await _controller.submitFeedback(
       rating: _rating,
       comment: _commentController.text,
     );
 
+    // Hide loading state
     setState(() {
       _isSubmitting = false;
     });
 
+    // Show result dialog and navigate back on success
     if (mounted) {
       await SweetAlert.show(
         context: context,

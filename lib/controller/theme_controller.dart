@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-/// ThemeController - Manages ADMIN-SIDE dark mode
-/// Apply this to ALL admin pages for consistent dark mode
-/// Place this in lib/controller/theme_controller.dart
+/// Manages all ADMIN-SIDE dark mode
 class ThemeController extends ChangeNotifier {
   static final ThemeController _instance = ThemeController._internal();
   factory ThemeController() => _instance;
@@ -71,7 +69,7 @@ class ThemeController extends ChangeNotifier {
   }
 
   // ============================================
-  // ADMIN DARK MODE COLORS - Use these in all admin pages
+  // ADMIN DARK MODE COLORS
   // ============================================
 
   /// Main background color

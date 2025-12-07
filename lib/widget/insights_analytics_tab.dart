@@ -1,8 +1,4 @@
-// lib/widget/insights_analytics_tab.dart
-// Insights & Analytics Tab - Book tours, flights, transportation, apps
-// Features:
-// - External link confirmation dialog before leaving app
-// - Fixed URLs for Skyscanner and car rental sites
+// Book tours, flights, transportation, apps
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';

@@ -1,7 +1,4 @@
-// lib/utilities/currency_converter.dart
-// FREE currency conversion using exchangerate-api.com (1500 free requests/month)
-// Falls back to static rates if API fails
-
+// FREE currency conversion using exchangerate-api.com
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';

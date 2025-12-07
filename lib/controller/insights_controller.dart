@@ -1,7 +1,4 @@
-// lib/controller/insights_controller.dart
 // Controller for Insights & Analytics tab - generates booking links with pre-filled data
-// Fixed: Skyscanner and car rental links now go to homepage (prefill was unreliable)
-
 import 'package:intl/intl.dart';
 
 class InsightsController {
@@ -27,14 +24,14 @@ class InsightsController {
       getYourGuide: 'https://www.getyourguide.com/s/?q=$destination',
       klook: 'https://www.klook.com/search/?query=$destination',
 
-      // Flights - Fixed: Skyscanner to homepage (prefill URLs are unreliable)
+      // Flights -Skyscanner to homepage (prefill URLs are unreliable)
       googleFlights: 'https://www.google.com/travel/flights?q=flights+to+$cityOnly',
       skyscanner: 'https://www.skyscanner.com/',  // Fixed: Go to homepage
       kayak: 'https://www.kayak.com/flights?destinations=$cityOnly',
 
-      // Car Rental - Fixed: Go to homepage (prefill URLs often break)
-      rentalCars: 'https://www.rentalcars.com/',  // Fixed: Go to homepage
-      kayakCars: 'https://www.kayak.com/cars',    // Fixed: Go to homepage
+      // Car Rental : Go to homepage (prefill URLs often break)
+      rentalCars: 'https://www.rentalcars.com/',
+      kayakCars: 'https://www.kayak.com/cars',
 
       // Transportation
       rome2rio: 'https://www.rome2rio.com/map/$countryOnly/$cityOnly',

@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import '../controller/home_data_controller.dart';
 import '../utilities/home_constants.dart';
 import '../widget/home_widgets.dart';
+import '../controller/favorite_controller.dart';
 import 'setting_page.dart';
 import 'search_page.dart';
 import 'explore_page.dart';
 import 'journey/my_trips_page.dart';
+import 'favorites_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -108,7 +110,7 @@ class _HomePageState extends State<HomePage> {
 }
 
 // ============================================
-// HOME CONTENT PAGE - Refactored
+// HOME CONTENT PAGE - With Favorites Button
 // ============================================
 class HomeContentPage extends StatefulWidget {
   final Function(int) onNavigate;
@@ -126,6 +128,7 @@ class _HomeContentPageState extends State<HomeContentPage> {
   List<Map<String, dynamic>> userTrips = [];
   bool isLoading = true;
   bool hasTrips = false;
+  int _favoritesCount = 0;
 
   @override
   void initState() {
@@ -133,6 +136,7 @@ class _HomeContentPageState extends State<HomeContentPage> {
     _controller = HomeDataController();
     _setupController();
     _controller.initialize();
+    _loadFavoritesCount();
   }
 
   @override
@@ -169,6 +173,27 @@ class _HomeContentPageState extends State<HomeContentPage> {
     };
   }
 
+  Future<void> _loadFavoritesCount() async {
+    if (FavoriteController.isLoggedIn) {
+      final count = await FavoriteController.getFavoritesCount();
+      if (mounted) {
+        setState(() {
+          _favoritesCount = count;
+        });
+      }
+    }
+  }
+
+  void _navigateToFavorites() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const FavoritesPage()),
+    ).then((_) {
+      // Refresh count when returning from favorites page
+      _loadFavoritesCount();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -177,43 +202,64 @@ class _HomeContentPageState extends State<HomeContentPage> {
         child: isLoading
             ? const Center(child: CircularProgressIndicator())
             : RefreshIndicator(
-          onRefresh: () => _controller.loadUserData(),
+          onRefresh: () async {
+            await _controller.loadUserData();
+            await _loadFavoritesCount();
+          },
           child: CustomScrollView(
             slivers: [
-              // Header
+              // Header with Favorites Button
               SliverToBoxAdapter(
                 child: Container(
                   color: Colors.white,
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 16, 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Hello, $userName! 👋',
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      RichText(
-                        text: TextSpan(
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey[600],
-                          ),
-                          children: const [
-                            TextSpan(text: 'Explore the '),
-                            TextSpan(
-                              text: 'Beautiful world!',
-                              style: TextStyle(
-                                color: Color(0xFFFF9800),
-                                fontWeight: FontWeight.w600,
-                              ),
+                      // Top row with greeting and favorites button
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Greeting text
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Hello, $userName! 👋',
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                RichText(
+                                  text: TextSpan(
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey[600],
+                                    ),
+                                    children: const [
+                                      TextSpan(text: 'Explore the '),
+                                      TextSpan(
+                                        text: 'Beautiful world!',
+                                        style: TextStyle(
+                                          color: Color(0xFFFF9800),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+
+                          // Favorites Button
+                          _buildFavoritesButton(),
+                        ],
                       ),
                     ],
                   ),
@@ -420,6 +466,57 @@ class _HomeContentPageState extends State<HomeContentPage> {
               const SliverToBoxAdapter(child: SizedBox(height: 32)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Build the favorites button with badge
+  Widget _buildFavoritesButton() {
+    return GestureDetector(
+      onTap: _navigateToFavorites,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.red[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red[100]!),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(
+              Icons.favorite,
+              color: Colors.red[400],
+              size: 26,
+            ),
+            // Badge with count
+            if (_favoritesCount > 0)
+              Positioned(
+                right: -8,
+                top: -8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.red[600],
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  child: Text(
+                    _favoritesCount > 99 ? '99+' : _favoritesCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

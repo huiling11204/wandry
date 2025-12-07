@@ -4,12 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'sweet_alert_dialog.dart';
 
-/// ROBUST Accommodation Tab with Fallback Support
-/// ✅ Works with OLD and NEW backend
-/// ✅ Generates URLs on-the-fly if missing
-/// ✅ Better error messages
-/// ✅ Debug logging
-/// ✅ SweetAlert confirmation before external links
 class AccommodationTab extends StatefulWidget {
   final String tripId;
 
@@ -389,7 +383,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
     final city = acc['city'] ?? '';
     final country = acc['country'] ?? '';
 
-    // ✅ DEBUG: Log booking links
+    // Log booking links
     debugPrint('📋 Hotel: $name');
     debugPrint('📋 Booking links available: ${bookingLinks.keys.toList()}');
 
@@ -658,7 +652,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
     );
   }
 
-  /// ✅ ROBUST: Generate URLs on-the-fly if backend doesn't provide them
+  /// Generate URLs on-the-fly if backend doesn't provide them
   Widget _buildRobustBookingSection({
     required String name,
     required String city,
@@ -767,7 +761,6 @@ class _AccommodationTabState extends State<AccommodationTab> {
     );
   }
 
-  /// ✅ ROBUST: Button that works with old and new backend
   Widget _buildRobustBookingButton(
       String label,
       Map<String, dynamic> bookingLinks,
@@ -818,7 +811,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
     );
   }
 
-  /// ✅ FALLBACK: Generate URLs if backend doesn't provide them
+  ///  Generate URLs if backend doesn't provide them
   String _generateFallbackURL(String platform, String city, String country, String? checkinDate, String? checkoutDate) {
     final dates = (checkinDate != null && checkoutDate != null)
         ? '&checkin=$checkinDate&checkout=$checkoutDate'
@@ -847,7 +840,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
     return _generateFallbackURL(platform, city, country, checkinDate, checkoutDate);
   }
 
-  /// ✅ ROBUST: Show options with all URLs guaranteed to work
+  /// Show options with all URLs guaranteed to work
   void _showRobustBookingOptions(
       BuildContext context,
       String platform,
@@ -957,7 +950,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
     );
   }
 
-  /// ✅ NEW: Show confirmation dialog before opening external link
+  ///Show confirmation dialog before opening external link
   Future<void> _showExternalLinkDialog(String siteName, String url) async {
     if (url.isEmpty) return;
 
@@ -1001,7 +994,7 @@ class _AccommodationTabState extends State<AccommodationTab> {
     }
   }
 
-  /// ✅ NEW: Get shortened URL for display
+  /// Get shortened URL for display
   String _getShortenedUrl(String url) {
     try {
       final uri = Uri.parse(url);

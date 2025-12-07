@@ -12,6 +12,7 @@ import 'screen/home_page.dart';
 import 'screen/admin/admin_dashboard.dart';
 import 'package:wandry/screen/admin/admin_settings_page.dart';
 import 'package:wandry/screen/admin/admin_reports_page.dart';
+import 'package:wandry/screen/favorites_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +43,7 @@ class MyApp extends StatelessWidget {
         '/admin-feedback': (context) => const AdminFeedbackPage(),
         '/admin-reports': (context) => const AdminReportsPage(),
         '/admin-settings': (context) => const AdminSettingsPage(),
+        '/favorites': (context) => const FavoritesPage(),
       },
     );
   }

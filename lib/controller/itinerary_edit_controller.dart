@@ -1,5 +1,4 @@
-// lib/controller/itinerary_edit_controller.dart
-// COMPLETE VERSION: Handles editing operations for itinerary items
+// Handles editing operations for itinerary items
 // Includes: Replace, Skip, Extend/Shorten time, Add note, REORDER
 
 import 'dart:async';
@@ -25,7 +24,7 @@ class ItineraryEditController {
   ];
 
   // ============================================
-  // REORDER FUNCTIONALITY (NEW)
+  // REORDER FUNCTIONALITY
   // ============================================
 
   /// Reorder items within a day
@@ -306,10 +305,6 @@ class ItineraryEditController {
       }
     }
   }
-
-  // ============================================
-  // EXISTING FUNCTIONALITY
-  // ============================================
 
   /// Get nearby alternative attractions for replacing an item
   Future<List<Map<String, dynamic>>> getNearbyAlternatives({

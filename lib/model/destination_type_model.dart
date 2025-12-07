@@ -1,6 +1,3 @@
-// lib/model/destination_type_model.dart
-// COMPLETE MERGED VERSION: Original destination_type_model.dart + New helper methods for edit feature
-
 import 'package:flutter/material.dart';
 
 class DestinationType {
@@ -74,7 +71,7 @@ class DestinationType {
   }
 
   // ============================================
-  // NEW: Helper methods for edit feature & backend
+  // Helper methods for edit feature & backend
   // ============================================
 
   /// Backend category mapping for each destination type

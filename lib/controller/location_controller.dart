@@ -1,5 +1,3 @@
-// lib/controller/location_controller.dart
-
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 

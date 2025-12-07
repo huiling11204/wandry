@@ -1,7 +1,3 @@
-// ============================================
-// VIEW PROFILE PAGE (REFACTORED - UI Only)
-// Location: lib/screen/view_profile_page.dart
-// ============================================
 import 'package:flutter/material.dart';
 import 'package:wandry/controller/profile_controller.dart';
 import 'package:wandry/widget/profile_field_widget.dart';
@@ -28,18 +24,32 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
   }
 
   // ---------------------------------------------------
-  // LOAD PROFILE (Calls Controller)
+  // LOAD PROFILE
   // ---------------------------------------------------
   Future<void> _loadProfile() async {
     setState(() => isLoading = true);
 
     try {
       final data = await _profileController.loadProfile();
-      setState(() {
-        profileData = data;
-      });
+
+      if (mounted) {
+        setState(() {
+          profileData = data;
+        });
+      }
     } catch (e) {
       print('❌ Error loading profile: $e');
+
+      // Check if user is still authenticated
+      if (_profileController.currentUser == null) {
+        // User was logged out (probably due to email change)
+        print('🔑 User not authenticated - redirecting to login');
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        }
+        return;
+      }
+
       if (mounted) {
         SweetAlertDialog.error(
           context: context,
@@ -48,23 +58,25 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
         );
       }
 
-      // Set fallback data
-      setState(() {
-        profileData = {
-          'fullName': _profileController.currentUser?.displayName ?? 'User',
-          'firstName': _profileController.currentUser?.displayName ?? 'User',
-          'lastName': '',
-          'email': _profileController.currentUser?.email ?? 'Not set',
-          'phoneNumber': 'Not set',
-        };
-      });
+      // Set fallback data only if user is still authenticated
+      if (mounted && _profileController.currentUser != null) {
+        setState(() {
+          profileData = {
+            'fullName': _profileController.currentUser?.displayName ?? 'User',
+            'firstName': _profileController.currentUser?.displayName ?? 'User',
+            'lastName': '',
+            'email': _profileController.currentUser?.email ?? 'Not set',
+            'phoneNumber': 'Not set',
+          };
+        });
+      }
     }
 
     if (mounted) setState(() => isLoading = false);
   }
 
   // ---------------------------------------------------
-  // DELETE ACCOUNT (Calls Controller)
+  // DELETE ACCOUNT
   // ---------------------------------------------------
   Future<void> _deleteAccount() async {
     final confirm = await SweetAlertDialog.show(
@@ -156,7 +168,9 @@ class _ViewProfilePageState extends State<ViewProfilePage> {
                           ),
                         );
 
-                        if (result == true) {
+                        // If user was logged out (email change),
+                        // this page won't be visible anymore
+                        if (result == true && mounted) {
                           _loadProfile();
                         }
                       },
