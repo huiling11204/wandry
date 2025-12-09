@@ -606,9 +606,100 @@ class _ItineraryTabState extends State<ItineraryTab> {
     await _performReorder(day, dayItems, oldIndex, newIndex);
   }
 
-  Map<String, dynamic> _calculateDistanceImpact(List<DocumentSnapshot> dayItems, int oldIndex, int newIndex, Map<String, dynamic>? accommodationData) {
-    return {'oldDistance': 0.0, 'newDistance': 0.0, 'addedDistance': 0.0, 'addedTime': 0};
+  Map<String, dynamic> _calculateDistanceImpact(
+      List<DocumentSnapshot> dayItems,
+      int oldIndex,
+      int newIndex,
+      Map<String, dynamic>? accommodationData
+      ) {
+    // Get accommodation coordinates (starting point)
+    double startLat = 0, startLng = 0;
+    if (accommodationData != null) {
+      final coords = accommodationData['coordinates'] as Map<String, dynamic>?;
+      if (coords != null) {
+        startLat = (coords['lat'] ?? coords['latitude'] ?? 0).toDouble();
+        startLng = (coords['lng'] ?? coords['longitude'] ?? 0).toDouble();
+      }
+    }
+
+    // Calculate CURRENT route distance (before reorder)
+    double oldTotalDistance = 0.0;
+    double prevLat = startLat;
+    double prevLng = startLng;
+
+    for (var item in dayItems) {
+      final data = item.data() as Map<String, dynamic>;
+      final coords = data['coordinates'] as Map<String, dynamic>?;
+
+      if (coords != null) {
+        final lat = (coords['lat'] ?? 0).toDouble();
+        final lng = (coords['lng'] ?? 0).toDouble();
+
+        if (prevLat != 0 && prevLng != 0 && lat != 0 && lng != 0) {
+          oldTotalDistance += _calculateDistance(prevLat, prevLng, lat, lng);
+        }
+
+        prevLat = lat;
+        prevLng = lng;
+      }
+    }
+
+    // Calculate NEW route distance (after reorder)
+    double newTotalDistance = 0.0;
+    prevLat = startLat;
+    prevLng = startLng;
+
+    // Create reordered list
+    final reorderedItems = List<DocumentSnapshot>.from(dayItems);
+    final movedItem = reorderedItems.removeAt(oldIndex);
+    reorderedItems.insert(newIndex, movedItem);
+
+    for (var item in reorderedItems) {
+      final data = item.data() as Map<String, dynamic>;
+      final coords = data['coordinates'] as Map<String, dynamic>?;
+
+      if (coords != null) {
+        final lat = (coords['lat'] ?? 0).toDouble();
+        final lng = (coords['lng'] ?? 0).toDouble();
+
+        if (prevLat != 0 && prevLng != 0 && lat != 0 && lng != 0) {
+          newTotalDistance += _calculateDistance(prevLat, prevLng, lat, lng);
+        }
+
+        prevLat = lat;
+        prevLng = lng;
+      }
+    }
+
+    // Calculate the difference
+    final addedDistance = newTotalDistance - oldTotalDistance;
+    final addedTime = ((addedDistance.abs() / 25) * 60).round(); // Assuming 25 km/h average speed
+
+    return {
+      'oldDistance': double.parse(oldTotalDistance.toStringAsFixed(2)),
+      'newDistance': double.parse(newTotalDistance.toStringAsFixed(2)),
+      'addedDistance': double.parse(addedDistance.toStringAsFixed(2)),
+      'addedTime': addedTime,
+    };
   }
+
+// Helper function to calculate distance between two points (Haversine formula)
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const double earthRadius = 6371; // km
+
+    final dLat = _toRadians(lat2 - lat1);
+    final dLon = _toRadians(lon2 - lon1);
+
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRadians(lat1)) * cos(_toRadians(lat2)) *
+            sin(dLon / 2) * sin(dLon / 2);
+
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+
+    return earthRadius * c;
+  }
+
+  double _toRadians(double degree) => degree * pi / 180;
 
   Future<void> _performReorder(int day, List<DocumentSnapshot> dayItems, int oldIndex, int newIndex) async {
     setState(() => _isProcessing = true);
@@ -830,6 +921,8 @@ class _ItineraryTabState extends State<ItineraryTab> {
     final isPreferred = data['is_preferred'] == true || data['isPreferred'] == true;
     final isReplaced = data['isReplaced'] == true;
     final isReordered = data['isReordered'] == true;
+    final userNote = data['userNote'] as String?;
+    final hasNote = userNote != null && userNote.isNotEmpty;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -888,6 +981,49 @@ class _ItineraryTabState extends State<ItineraryTab> {
                   if (!isMeal) Icon(Icons.more_vert, size: 20, color: Colors.grey[400]),
                 ],
               ),
+              // 🆕 Display user note if exists
+              if (hasNote) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.edit_note, size: 18, color: Colors.blue[700]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Personal Note',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[900],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              userNote,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[800],
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               if (hasRestaurantOptions) ...[
                 const SizedBox(height: 8),
                 Container(
