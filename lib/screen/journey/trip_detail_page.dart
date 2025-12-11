@@ -6,8 +6,8 @@ import 'package:wandry/widget/accommodation_tab.dart';
 import 'package:wandry/widget/budget_tab.dart';
 import 'package:wandry/widget/itinerary_tab.dart';
 import 'package:wandry/widget/restaurant_tab.dart';
-import 'package:wandry/widget/trip_essentials_tab.dart';  // NEW
-import 'package:wandry/widget/insights_analytics_tab.dart'; // NEW
+import 'package:wandry/widget/trip_essentials_tab.dart';
+import 'package:wandry/widget/insights_analytics_tab.dart';
 import 'package:wandry/widget/sweet_alert_dialog.dart';
 import 'package:wandry/utilities/currency_helper.dart';
 import 'package:wandry/controller/export_controller.dart';
