@@ -53,7 +53,7 @@ class ItineraryItemModel {
   final String? userNote;
   final DateTime? noteAddedAt;
 
-  // REORDER tracking fields (NEW)
+  // REORDER tracking fields
   final bool? isReordered;
   final DateTime? reorderedAt;
   final int? originalOrderInDay;

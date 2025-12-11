@@ -88,7 +88,7 @@ class _TripDetailPageState extends State<TripDetailPage>
           batch.delete(doc.reference);
         }
 
-        // Also try to delete by document ID (your structure)
+        // Also try to delete by document ID
         try {
           await _firestore.collection('accommodation').doc(widget.tripId).delete();
         } catch (e) {

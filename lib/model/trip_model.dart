@@ -57,7 +57,6 @@ class TripModel {
           ? List<String>.from(data['features'])
           : null,
       mlMetrics: data['mlMetrics'],
-      // NEW fields
       dataQuality: data['dataQuality'],
       isSparseDataArea: data['isSparseDataArea'],
       totalRestaurantsFound: data['totalRestaurantsFound'],
