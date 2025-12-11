@@ -440,14 +440,12 @@ class _TripDetailPageState extends State<TripDetailPage>
                       RestaurantTab(tripId: widget.tripId),
                       BudgetTab(tripId: widget.tripId),
                       AccommodationTab(tripId: widget.tripId),
-                      // NEW: Trip Essentials (replaces Resources)
                       TripEssentialsTab(
                         tripId: widget.tripId,
                         destinationCity: trip.destinationCity,
                         destinationCountry: trip.destinationCountry,
                         destinationCurrency: trip.destinationCurrency,
                       ),
-                      // NEW: Explore & Insights (replaces ML Insights, but includes ML at bottom)
                       InsightsAnalyticsTab(
                         tripId: widget.tripId,
                         destinationCity: trip.destinationCity,
