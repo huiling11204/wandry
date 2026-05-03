@@ -98,7 +98,11 @@ out 30;
             response = requests.post(
                 server,
                 data=query,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                headers = {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'Accept':'*/*',
+                            'User-Agent': 'WandryTripPlannerApp/1.0 (Contact: admin@wandry.app)'
+                          },
                 timeout=REQUEST_TIMEOUT
             )
 

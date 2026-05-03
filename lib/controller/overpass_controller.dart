@@ -123,7 +123,11 @@ out center;
         final response = await http.post(
           Uri.parse(servers[i]),
           body: query,
-          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept':'*/*',
+            'User-Agent': 'WandryTripPlannerApp/1.0 (Contact: admin@wandry.app)'
+          },
         ).timeout(const Duration(seconds: 15));
 
         print('Response status: ${response.statusCode}');
